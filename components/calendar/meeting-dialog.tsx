@@ -111,17 +111,18 @@ function MeetingForm({
           />
         </div>
 
-        <div className="grid grid-cols-3 gap-3">
-          <div className="col-span-1 flex flex-col gap-1.5">
-            <Label htmlFor="meeting-date">Data</Label>
-            <Input
-              id="meeting-date"
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-              required
-            />
-          </div>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="meeting-date">Data</Label>
+          <Input
+            id="meeting-date"
+            type="date"
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
+            required
+          />
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="meeting-start">Início</Label>
             <Input
