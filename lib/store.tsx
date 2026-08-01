@@ -90,6 +90,7 @@ interface StoreContextValue extends StoreData {
     coverImageUrl?: string;
   }) => Project;
   updateProject: (id: string, patch: Partial<Project>) => void;
+  deleteProject: (id: string) => void;
   addCard: (input: {
     projectId: string;
     columnId: string;
@@ -229,6 +230,19 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         }));
         const project = data.projects.find((p) => p.id === id);
         if (project) logActivity(id, "updated", "project", project.name);
+      },
+
+      deleteProject: (id) => {
+        setData((d) => ({
+          ...d,
+          projects: d.projects.filter((p) => p.id !== id),
+          columns: d.columns.filter((c) => c.projectId !== id),
+          cards: d.cards.filter((c) => c.projectId !== id),
+          files: d.files.filter((f) => f.projectId !== id),
+          references: d.references.filter((r) => r.projectId !== id),
+          meetings: d.meetings.filter((m) => m.projectId !== id),
+          activity: d.activity.filter((a) => a.projectId !== id),
+        }));
       },
 
       addCard: ({ projectId, columnId, title, description, labels, dueDate }) => {

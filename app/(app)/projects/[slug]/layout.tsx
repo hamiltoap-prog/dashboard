@@ -6,6 +6,7 @@ import { ArrowLeft, Drama } from "lucide-react";
 import { ProjectTabsNav } from "@/components/project-tabs-nav";
 import { StatusBadge } from "@/components/status-badge";
 import { UserAvatar } from "@/components/user-avatar";
+import { ProjectActionsMenu } from "@/components/project-actions-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useProject, useStore } from "@/lib/store";
 
@@ -63,17 +64,24 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
               <p className="max-w-2xl text-sm text-muted-foreground">{project.description}</p>
             </div>
 
-            <div className="flex -space-x-2">
-              {members.map((member) => (
-                <Tooltip key={member.id}>
-                  <TooltipTrigger asChild>
-                    <span>
-                      <UserAvatar profile={member} className="size-8" />
-                    </span>
-                  </TooltipTrigger>
-                  <TooltipContent>{member.name}</TooltipContent>
-                </Tooltip>
-              ))}
+            <div className="flex items-center gap-2">
+              <div className="flex -space-x-2">
+                {members.map((member) => (
+                  <Tooltip key={member.id}>
+                    <TooltipTrigger asChild>
+                      <span>
+                        <UserAvatar profile={member} className="size-8" />
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent>{member.name}</TooltipContent>
+                  </Tooltip>
+                ))}
+              </div>
+              <ProjectActionsMenu
+                project={project}
+                redirectOnDelete
+                className="bg-secondary text-muted-foreground hover:bg-accent hover:text-foreground"
+              />
             </div>
           </div>
 
