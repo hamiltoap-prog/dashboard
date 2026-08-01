@@ -7,6 +7,7 @@ import { ProjectTabsNav } from "@/components/project-tabs-nav";
 import { StatusBadge } from "@/components/status-badge";
 import { UserAvatar } from "@/components/user-avatar";
 import { ProjectActionsMenu } from "@/components/project-actions-menu";
+import { ProjectMembersDialog } from "@/components/project-members-dialog";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useProject, useStore } from "@/lib/store";
 
@@ -77,6 +78,7 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
                   </Tooltip>
                 ))}
               </div>
+              <ProjectMembersDialog project={project} />
               <ProjectActionsMenu
                 project={project}
                 redirectOnDelete

@@ -307,6 +307,14 @@ export async function insertProject(
   );
 }
 
+export async function addProjectMember(supabase: SupabaseClient, projectId: string, userId: string) {
+  assertOk(
+    await supabase
+      .from("project_members")
+      .insert({ project_id: projectId, user_id: userId, role: "membro" })
+  );
+}
+
 export async function insertColumns(
   supabase: SupabaseClient,
   columns: { id: string; projectId: string; name: string; position: number }[]

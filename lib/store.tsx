@@ -107,6 +107,7 @@ interface StoreContextValue extends StoreData {
   }) => Project;
   updateProject: (id: string, patch: Partial<Project>) => void;
   deleteProject: (id: string) => void;
+  addMember: (projectId: string, email: string) => void;
   addCard: (input: {
     projectId: string;
     columnId: string;
@@ -349,6 +350,47 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         if (supabase) {
           db.deleteProjectRow(supabase, id).catch((error) =>
             reportSaveError("Não foi possível excluir o projeto no servidor.", error)
+          );
+        }
+      },
+
+      addMember: (projectId, email) => {
+        const trimmed = email.trim().toLowerCase();
+        const profile = data.profiles.find((p) => p.email.toLowerCase() === trimmed);
+        if (!profile) {
+          toast.error("Pessoa não encontrada", {
+            description: configured
+              ? "Essa pessoa precisa criar uma conta no Palco primeiro (tela de login)."
+              : "Nenhum perfil de exemplo tem esse e-mail.",
+          });
+          return;
+        }
+
+        const project = data.projects.find((p) => p.id === projectId);
+        if (!project) return;
+        if (project.memberIds.includes(profile.id)) {
+          toast.info(`${profile.name} já faz parte do projeto.`);
+          return;
+        }
+
+        setData((d) => ({
+          ...d,
+          projects: d.projects.map((p) =>
+            p.id === projectId ? { ...p, memberIds: [...p.memberIds, profile.id] } : p
+          ),
+        }));
+        logActivity(
+          projectId,
+          "updated",
+          "project",
+          project.name,
+          `adicionou ${profile.name} ao projeto`
+        );
+        toast.success(`${profile.name} foi adicionado(a) ao projeto`);
+
+        if (supabase) {
+          db.addProjectMember(supabase, projectId, profile.id).catch((error) =>
+            reportSaveError("Não foi possível adicionar a pessoa no servidor.", error)
           );
         }
       },
@@ -622,7 +664,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         }
       },
     }),
-    [data, currentUser, currentUserId, logActivity, logActivityLocal, supabase]
+    [data, currentUser, currentUserId, logActivity, logActivityLocal, supabase, configured]
   );
 
   if (!hydrated) {
