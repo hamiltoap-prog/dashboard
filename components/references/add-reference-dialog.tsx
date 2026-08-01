@@ -28,6 +28,7 @@ import {
 } from "@/components/ui/select";
 import { useStore } from "@/lib/store";
 import { getYouTubeId, youTubeThumbnail } from "@/lib/youtube";
+import { guessSourceLabel, looksLikeDirectImageUrl } from "@/lib/link-preview";
 import type { ReferenceType } from "@/lib/types";
 
 const SOURCE_OPTIONS = ["YouTube", "Instagram", "Pinterest", "Site / Blog", "Outro"];
@@ -52,20 +53,28 @@ export function AddReferenceDialog({ projectId }: { projectId: string }) {
 
   const url = form.watch("url");
   const youTubeId = React.useMemo(() => getYouTubeId(url), [url]);
+  const isDirectImage = React.useMemo(() => looksLikeDirectImageUrl(url), [url]);
+  const isPageLink = Boolean(url) && !youTubeId && !isDirectImage;
 
   React.useEffect(() => {
-    if (youTubeId) form.setValue("sourceLabel", "YouTube");
-  }, [youTubeId, form]);
+    if (!url) return;
+    if (youTubeId) {
+      form.setValue("sourceLabel", "YouTube");
+    } else {
+      const guessed = guessSourceLabel(url);
+      if (SOURCE_OPTIONS.includes(guessed)) form.setValue("sourceLabel", guessed);
+    }
+  }, [url, youTubeId, form]);
 
   function onSubmit(values: FormValues) {
-    const type: ReferenceType = youTubeId ? "video" : "imagem";
+    const type: ReferenceType = youTubeId ? "video" : isDirectImage ? "imagem" : "link";
     addReference({
       projectId,
       type,
       url: values.url,
       title: values.title,
       sourceLabel: values.sourceLabel,
-      thumbnailUrl: youTubeId ? youTubeThumbnail(youTubeId) : values.url,
+      thumbnailUrl: youTubeId ? youTubeThumbnail(youTubeId) : type === "imagem" ? values.url : null,
       tags: values.tags
         ? values.tags.split(",").map((t) => t.trim()).filter(Boolean)
         : [],
@@ -108,6 +117,19 @@ export function AddReferenceDialog({ projectId }: { projectId: string }) {
             {youTubeId && (
               <p className="text-xs text-muted-foreground">
                 Vídeo do YouTube detectado — vai aparecer com player embutido.
+              </p>
+            )}
+            {isDirectImage && (
+              <p className="text-xs text-muted-foreground">
+                Link direto de imagem detectado — vai aparecer com a foto.
+              </p>
+            )}
+            {isPageLink && (
+              <p className="text-xs text-muted-foreground">
+                Esse é um link de página (não o arquivo da imagem), então vai aparecer como um
+                card de link, sem preview. Para mostrar a foto: abra o post, clique com o botão
+                direito na imagem → <strong>&quot;Copiar endereço da imagem&quot;</strong> — e
+                cole esse link aqui em vez do link do post.
               </p>
             )}
           </div>

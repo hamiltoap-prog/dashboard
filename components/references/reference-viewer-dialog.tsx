@@ -1,8 +1,9 @@
 "use client";
 
+import * as React from "react";
 import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { ExternalLink, Trash2 } from "lucide-react";
+import { ExternalLink, ImageOff, Trash2 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -19,10 +20,12 @@ export function ReferenceViewerDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const { getProfile, deleteReference } = useStore();
+  const [imgError, setImgError] = React.useState(false);
 
   if (!reference) return null;
 
   const youTubeId = reference.type === "video" ? getYouTubeId(reference.url) : null;
+  const hasImage = Boolean(reference.thumbnailUrl) && !imgError;
   const addedBy = getProfile(reference.addedBy);
 
   function handleDelete() {
@@ -45,9 +48,19 @@ export function ReferenceViewerDialog({
               allowFullScreen
               className="size-full"
             />
-          ) : (
+          ) : hasImage ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={reference.url} alt={reference.title} className="size-full object-contain" />
+            <img
+              src={reference.thumbnailUrl!}
+              alt={reference.title}
+              onError={() => setImgError(true)}
+              className="size-full object-contain"
+            />
+          ) : (
+            <div className="flex size-full flex-col items-center justify-center gap-2 text-white/70">
+              <ImageOff className="size-8" />
+              <p className="text-sm">Sem preview — abra o link original para ver.</p>
+            </div>
           )}
         </div>
 

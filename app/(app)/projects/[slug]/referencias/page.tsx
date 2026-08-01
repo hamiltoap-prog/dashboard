@@ -43,6 +43,7 @@ export default function ProjectReferencesPage() {
       )}
 
       <ReferenceViewerDialog
+        key={selected?.id ?? "none"}
         reference={selected}
         onOpenChange={(open) => !open && setSelected(null)}
       />
