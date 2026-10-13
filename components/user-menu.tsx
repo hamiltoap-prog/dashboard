@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { LogOut, User } from "lucide-react";
+import { KeyRound, LogOut, User } from "lucide-react";
 
 import {
   DropdownMenu,
@@ -48,6 +48,10 @@ export function UserMenu({ user }: { user: Profile }) {
         <DropdownMenuItem>
           <User />
           Perfil
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => router.push("/reset-password")}>
+          <KeyRound />
+          Alterar senha
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem variant="destructive" onSelect={handleSignOut}>

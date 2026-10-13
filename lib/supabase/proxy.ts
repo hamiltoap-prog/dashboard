@@ -32,9 +32,12 @@ export async function updateSession(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const isAuthRoute = request.nextUrl.pathname.startsWith("/login");
+  const { pathname } = request.nextUrl;
+  // /auth/* (callback do link do e-mail) precisa ser acessível sem sessão.
+  const isPublicRoute = pathname.startsWith("/login") || pathname.startsWith("/auth/");
+  const isAuthRoute = pathname.startsWith("/login");
 
-  if (!user && !isAuthRoute) {
+  if (!user && !isPublicRoute) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     url.searchParams.set("next", request.nextUrl.pathname);
