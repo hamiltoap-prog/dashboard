@@ -34,7 +34,7 @@ export function UserMenu({ user }: { user: Profile }) {
           <span className="text-xs font-normal text-muted-foreground">{user.email}</span>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
-        <DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => router.push("/perfil")}>
           <User />
           Perfil
         </DropdownMenuItem>

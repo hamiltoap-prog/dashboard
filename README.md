@@ -8,6 +8,11 @@ quem fez o quê. Visual inspirado no design da Apple, claro/escuro, pensado prim
 
 Os dados atualizam **em tempo real** entre dispositivos e pessoas (Firestore).
 
+**O que dá para fazer:** criar projetos e convidar pessoas pelo e-mail; Kanban com colunas próprias
+(criar, renomear, reordenar, excluir), responsáveis, etiquetas, prazos e filtros (pessoa, etiqueta, atrasados);
+**Minhas tarefas** (tudo o que é seu, em todos os projetos, agrupado por prazo); arquivos e roteiros,
+referências visuais, calendário de reuniões e histórico de atividade; **Perfil** (nome, cor e foto).
+
 ---
 
 ## 1. Configurar o Firebase (uma vez)
@@ -114,7 +119,7 @@ NEXT_PUBLIC_FIREBASE_EMULATOR_HOST=127.0.0.1 npm run dev
 
 ## Estrutura
 
-- `app/(app)` — dashboard, páginas de projeto e "Alterar senha" (exigem login)
+- `app/(app)` — dashboard, páginas de projeto, "Minhas tarefas", "Perfil" e "Alterar senha" (exigem login)
 - `app/login` — entrar, criar conta, entrar com Google e "Esqueci minha senha"
 - `components/` — interface, por área (`kanban/`, `files/`, `references/`, `calendar/`)
 - `lib/store.tsx` — dados em tempo real do Firestore + todas as ações (criar, mover, excluir...)

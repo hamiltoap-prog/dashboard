@@ -5,6 +5,7 @@ import { useDroppable } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { Plus } from "lucide-react";
 
+import { ColumnMenu } from "@/components/kanban/column-menu";
 import { KanbanCard } from "@/components/kanban/kanban-card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -12,12 +13,19 @@ import type { KanbanCard as KanbanCardType, KanbanColumn as KanbanColumnType } f
 
 export function KanbanColumn({
   column,
+  index,
+  siblings,
   cards,
+  totalCards,
   onCardClick,
   onAddCard,
 }: {
   column: KanbanColumnType;
+  index: number;
+  siblings: KanbanColumnType[];
   cards: KanbanCardType[];
+  // total de cards da coluna, ignorando os filtros
+  totalCards: number;
   onCardClick: (card: KanbanCardType) => void;
   onAddCard: (title: string) => void;
 }) {
@@ -39,8 +47,13 @@ export function KanbanColumn({
   return (
     <div className="flex w-[280px] shrink-0 flex-col gap-3 sm:w-[300px]">
       <div className="flex items-center justify-between px-1">
-        <h3 className="text-sm font-semibold">{column.name}</h3>
-        <span className="text-xs text-muted-foreground">{cards.length}</span>
+        <h3 className="min-w-0 truncate text-sm font-semibold">{column.name}</h3>
+        <div className="flex items-center gap-1">
+          <span className="text-xs text-muted-foreground">
+            {cards.length === totalCards ? totalCards : `${cards.length}/${totalCards}`}
+          </span>
+          <ColumnMenu column={column} index={index} siblings={siblings} cardCount={totalCards} />
+        </div>
       </div>
 
       <div

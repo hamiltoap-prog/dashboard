@@ -1,7 +1,6 @@
 "use client";
 
 import * as React from "react";
-import { format } from "date-fns";
 import { Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -15,7 +14,10 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { UserAvatar } from "@/components/user-avatar";
+import { dueInputValue, dueIsoFromInput } from "@/lib/dates";
 import { useStore } from "@/lib/store";
+import { cn } from "@/lib/utils";
 import type { KanbanCard } from "@/lib/types";
 
 export function CardDetailDialog({
@@ -49,13 +51,22 @@ function CardForm({
   card: KanbanCard;
   onOpenChange: (open: boolean) => void;
 }) {
-  const { updateCard, deleteCard } = useStore();
+  const { updateCard, deleteCard, projects, getProfile } = useStore();
+
+  const members = (projects.find((p) => p.id === card.projectId)?.memberIds ?? [])
+    .map((id) => getProfile(id))
+    .filter((p): p is NonNullable<typeof p> => Boolean(p));
+  const [assigneeIds, setAssigneeIds] = React.useState(card.assigneeIds);
+
+  function toggleAssignee(id: string) {
+    setAssigneeIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  }
 
   const [title, setTitle] = React.useState(card.title);
   const [description, setDescription] = React.useState(card.description ?? "");
   const [labels, setLabels] = React.useState(card.labels.join(", "));
   const [dueDate, setDueDate] = React.useState(
-    card.dueDate ? format(new Date(card.dueDate), "yyyy-MM-dd") : ""
+    card.dueDate ? dueInputValue(card.dueDate) : ""
   );
 
   function save() {
@@ -66,7 +77,8 @@ function CardForm({
         .split(",")
         .map((l) => l.trim())
         .filter(Boolean),
-      dueDate: dueDate ? new Date(dueDate).toISOString() : null,
+      dueDate: dueDate ? dueIsoFromInput(dueDate) : null,
+      assigneeIds,
     });
     onOpenChange(false);
   }
@@ -96,6 +108,33 @@ function CardForm({
             value={description}
             onChange={(e) => setDescription(e.target.value)}
           />
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <Label>Responsáveis</Label>
+          <div className="flex flex-wrap gap-2">
+            {members.map((member) => {
+              const selected = assigneeIds.includes(member.id);
+              return (
+                <button
+                  key={member.id}
+                  type="button"
+                  aria-pressed={selected}
+                  onClick={() => toggleAssignee(member.id)}
+                  className={cn(
+                    "inline-flex items-center gap-2 rounded-full border py-1 pl-1 pr-3 text-sm transition-colors",
+                    "outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+                    selected
+                      ? "border-primary bg-primary/10 text-foreground"
+                      : "border-border text-muted-foreground hover:bg-accent"
+                  )}
+                >
+                  <UserAvatar profile={member} className="size-6 text-[10px]" />
+                  {member.name.split(" ")[0]}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         <div className="grid grid-cols-2 gap-3">

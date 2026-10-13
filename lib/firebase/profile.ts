@@ -3,7 +3,7 @@ import type { User } from "firebase/auth";
 
 import { getFirebase } from "@/lib/firebase/client";
 
-const AVATAR_COLORS = ["#5B8DEF", "#E7A23E", "#4FB286", "#C868D0", "#E2677A", "#5BB8C9", "#8E7CC3"];
+export const AVATAR_COLORS = ["#5B8DEF", "#E7A23E", "#4FB286", "#C868D0", "#E2677A", "#5BB8C9", "#8E7CC3"];
 
 function pickColor(uid: string) {
   let hash = 0;

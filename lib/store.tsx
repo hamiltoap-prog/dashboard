@@ -161,6 +161,13 @@ interface StoreContextValue extends StoreData {
     dueDate?: string | null;
   }) => KanbanCard;
   moveCard: (cardId: string, toColumnId: string, toIndex: number) => void;
+  addColumn: (projectId: string, name: string) => void;
+  renameColumn: (id: string, name: string) => void;
+  // direction: -1 = para a esquerda, 1 = para a direita
+  moveColumn: (id: string, direction: -1 | 1) => void;
+  // Os cards da coluna vão para `moveCardsTo`; com null eles são excluídos junto.
+  deleteColumn: (id: string, moveCardsTo: string | null) => void;
+  updateProfile: (patch: Partial<Pick<Profile, "name" | "colorHex" | "avatarUrl">>) => void;
   updateCard: (id: string, patch: Partial<KanbanCard>) => void;
   deleteCard: (id: string) => void;
   addFile: (input: {
@@ -545,6 +552,91 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
             column ? `moveu para ${column.name}` : undefined
           );
         }
+      },
+
+      addColumn: (projectId, name) => {
+        const column: KanbanColumn = {
+          id: newId(),
+          projectId,
+          name,
+          position: data.columns.filter((c) => c.projectId === projectId).length,
+        };
+        setDoc(itemDoc(projectId, "columns", column.id), withoutId(column)).catch(
+          failure("Não foi possível criar a coluna.")
+        );
+        logActivity(projectId, "created", "column", name);
+      },
+
+      renameColumn: (id, name) => {
+        const column = data.columns.find((c) => c.id === id);
+        if (!column || column.name === name) return;
+        updateDoc(itemDoc(column.projectId, "columns", id), { name }).catch(
+          failure("Não foi possível renomear a coluna.")
+        );
+        logActivity(column.projectId, "updated", "column", name, `renomeou "${column.name}"`);
+      },
+
+      moveColumn: (id, direction) => {
+        const column = data.columns.find((c) => c.id === id);
+        if (!column) return;
+        const siblings = data.columns
+          .filter((c) => c.projectId === column.projectId)
+          .sort((a, b) => a.position - b.position);
+        const from = siblings.findIndex((c) => c.id === id);
+        const to = from + direction;
+        if (to < 0 || to >= siblings.length) return;
+        siblings.splice(to, 0, siblings.splice(from, 1)[0]);
+        const batch = writeBatch(db);
+        siblings.forEach((c, position) => {
+          if (c.position !== position) batch.update(itemDoc(column.projectId, "columns", c.id), { position });
+        });
+        batch.commit().catch(failure("Não foi possível reordenar as colunas."));
+      },
+
+      deleteColumn: (id, moveCardsTo) => {
+        const column = data.columns.find((c) => c.id === id);
+        if (!column) return;
+        const cards = data.cards
+          .filter((c) => c.columnId === id)
+          .sort((a, b) => a.position - b.position);
+        const batch = writeBatch(db);
+        if (moveCardsTo) {
+          // Os cards movidos entram no fim da coluna de destino, mantendo a ordem.
+          const base = data.cards.filter((c) => c.columnId === moveCardsTo).length;
+          const now = nowIso();
+          cards.forEach((card, i) =>
+            batch.update(itemDoc(column.projectId, "cards", card.id), {
+              columnId: moveCardsTo,
+              position: base + i,
+              updatedAt: now,
+            })
+          );
+        } else {
+          cards.forEach((card) => batch.delete(itemDoc(column.projectId, "cards", card.id)));
+        }
+        batch.delete(itemDoc(column.projectId, "columns", id));
+        // Fecha o espaço deixado na ordem das colunas.
+        data.columns
+          .filter((c) => c.projectId === column.projectId && c.id !== id)
+          .sort((a, b) => a.position - b.position)
+          .forEach((c, position) => {
+            if (c.position !== position) batch.update(itemDoc(column.projectId, "columns", c.id), { position });
+          });
+        batch.commit().catch(failure("Não foi possível excluir a coluna."));
+        logActivity(
+          column.projectId,
+          "deleted",
+          "column",
+          column.name,
+          cards.length && !moveCardsTo ? `excluiu junto ${cards.length} card(s)` : undefined
+        );
+      },
+
+      updateProfile: (patch) => {
+        const fields = pick(patch, ["name", "colorHex", "avatarUrl"]);
+        updateDoc(doc(db, "users", uid), fields).catch(
+          failure("Não foi possível salvar seu perfil.")
+        );
       },
 
       updateCard: (id, patch) => {

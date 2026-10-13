@@ -2,12 +2,13 @@
 
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { format, isPast } from "date-fns";
+import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { Clock } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { UserAvatar } from "@/components/user-avatar";
+import { dueDateOf, isOverdue } from "@/lib/dates";
 import { useStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import type { KanbanCard as KanbanCardType } from "@/lib/types";
@@ -36,7 +37,7 @@ export function KanbanCard({
     .map((id) => getProfile(id))
     .filter((p): p is NonNullable<typeof p> => Boolean(p));
 
-  const overdue = card.dueDate ? isPast(new Date(card.dueDate)) : false;
+  const overdue = isOverdue(card.dueDate);
 
   return (
     <button
@@ -75,7 +76,7 @@ export function KanbanCard({
               )}
             >
               <Clock className="size-3" />
-              {format(new Date(card.dueDate), "d MMM", { locale: ptBR })}
+              {format(dueDateOf(card.dueDate), "d MMM", { locale: ptBR })}
             </span>
           ) : (
             <span />
