@@ -40,7 +40,8 @@ async function fetchTable(table) {
     const response = await fetch(`${SUPABASE_URL}/rest/v1/${table}?select=*`, {
       headers: {
         apikey: SUPABASE_KEY,
-        Authorization: `Bearer ${SUPABASE_KEY}`,
+        // Chaves antigas (JWT, "eyJ...") vão também como Bearer; as novas ("sb_secret_...") só em `apikey`.
+        ...(SUPABASE_KEY.startsWith("eyJ") ? { Authorization: `Bearer ${SUPABASE_KEY}` } : {}),
         Range: `${from}-${from + pageSize - 1}`,
       },
     });
