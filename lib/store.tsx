@@ -3,22 +3,30 @@
 import * as React from "react";
 import { useParams } from "next/navigation";
 import { toast } from "sonner";
-import type { SupabaseClient } from "@supabase/supabase-js";
-
 import {
-  CURRENT_USER_ID,
-  mockActivity,
-  mockCards,
-  mockColumns,
-  mockFiles,
-  mockMeetings,
-  mockProfiles,
-  mockProjects,
-  mockReferences,
-} from "@/lib/mock-data";
-import { isSupabaseConfigured } from "@/lib/supabase/is-configured";
-import { createClient } from "@/lib/supabase/client";
-import * as db from "@/lib/supabase/queries";
+  arrayRemove,
+  arrayUnion,
+  collection,
+  deleteDoc,
+  doc,
+  getDocs,
+  limit,
+  onSnapshot,
+  orderBy,
+  query,
+  setDoc,
+  updateDoc,
+  where,
+  writeBatch,
+  type DocumentData,
+  type Query,
+  type Unsubscribe,
+} from "firebase/firestore";
+
+import { FullPageSpinner } from "@/components/full-page-spinner";
+import { useAuth } from "@/lib/firebase/auth";
+import { getFirebase } from "@/lib/firebase/client";
+import { ensureProfile } from "@/lib/firebase/profile";
 import type {
   ActivityAction,
   ActivityEntityType,
@@ -33,7 +41,90 @@ import type {
   ProjectStatus,
 } from "@/lib/types";
 
-const STORAGE_KEY = "palco:dashboard:v1";
+// Modelo no Firestore:
+//   users/{uid}                      -> Profile
+//   projects/{projectId}             -> Project (memberIds = quem tem acesso)
+//   projects/{projectId}/{sub}/{id}  -> columns | cards | files | references | meetings | activity
+// O `id` de cada item é o id do documento (não é gravado dentro dele).
+
+const SUBCOLLECTIONS = ["columns", "cards", "files", "references", "meetings", "activity"] as const;
+type Sub = (typeof SUBCOLLECTIONS)[number];
+
+const DEFAULT_PHASES = ["A iniciar", "Em Produção", "Concluído", "Recorrente"];
+const ACTIVITY_LIMIT = 150;
+const BATCH_LIMIT = 400;
+
+interface ProjectData {
+  columns: KanbanColumn[];
+  cards: KanbanCard[];
+  files: ProjectFile[];
+  references: ProjectReference[];
+  meetings: Meeting[];
+  activity: ActivityEntry[];
+}
+
+const EMPTY_PROJECT_DATA: ProjectData = {
+  columns: [],
+  cards: [],
+  files: [],
+  references: [],
+  meetings: [],
+  activity: [],
+};
+
+function newId() {
+  return crypto.randomUUID();
+}
+
+function nowIso() {
+  return new Date().toISOString();
+}
+
+function slugify(name: string) {
+  return name
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
+}
+
+function withoutId<T extends { id: string }>(value: T): Omit<T, "id"> {
+  const copy: Partial<T> = { ...value };
+  delete copy.id;
+  return copy as Omit<T, "id">;
+}
+
+function pick<T extends object>(source: Partial<T>, keys: (keyof T)[]): Partial<T> {
+  const result: Partial<T> = {};
+  for (const key of keys) if (key in source) result[key] = source[key];
+  return result;
+}
+
+function failure(context: string) {
+  return (error: unknown) => {
+    console.error(context, error);
+    toast.error(context, {
+      description: error instanceof Error ? error.message : undefined,
+    });
+  };
+}
+
+function byNewest(a: { createdAt?: string; addedAt?: string }, b: { createdAt?: string; addedAt?: string }) {
+  const left = a.createdAt ?? a.addedAt ?? "";
+  const right = b.createdAt ?? b.addedAt ?? "";
+  return right.localeCompare(left);
+}
+
+const mappers: { [K in Sub]: (id: string, data: DocumentData) => ProjectData[K][number] } = {
+  columns: (id, data) => ({ id, ...data }) as KanbanColumn,
+  cards: (id, data) =>
+    ({ id, ...data, assigneeIds: data.assigneeIds ?? [], labels: data.labels ?? [] }) as KanbanCard,
+  files: (id, data) => ({ id, ...data }) as ProjectFile,
+  references: (id, data) => ({ id, ...data, tags: data.tags ?? [] }) as ProjectReference,
+  meetings: (id, data) => ({ id, ...data, attendeeIds: data.attendeeIds ?? [] }) as Meeting,
+  activity: (id, data) => ({ id, ...data }) as ActivityEntry,
+};
 
 interface StoreData {
   profiles: Profile[];
@@ -46,59 +137,11 @@ interface StoreData {
   activity: ActivityEntry[];
 }
 
-function seedData(): StoreData {
-  return {
-    profiles: mockProfiles,
-    projects: mockProjects,
-    columns: mockColumns,
-    cards: mockCards,
-    files: mockFiles,
-    references: mockReferences,
-    meetings: mockMeetings,
-    activity: mockActivity,
-  };
-}
-
-function emptyData(): StoreData {
-  return {
-    profiles: [],
-    projects: [],
-    columns: [],
-    cards: [],
-    files: [],
-    references: [],
-    meetings: [],
-    activity: [],
-  };
-}
-
-function newId() {
-  return typeof crypto !== "undefined" && "randomUUID" in crypto
-    ? crypto.randomUUID()
-    : Math.random().toString(36).slice(2);
-}
-
-function slugify(name: string) {
-  return name
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/(^-|-$)/g, "");
-}
-
-const DEFAULT_PHASES = ["A iniciar", "Em Produção", "Concluído", "Recorrente"];
-
-function reportSaveError(context: string, error: unknown) {
-  console.error(context, error);
-  toast.error("Não foi possível salvar no servidor", {
-    description: error instanceof Error ? error.message : context,
-  });
-}
-
 interface StoreContextValue extends StoreData {
   currentUser: Profile;
   getProfile: (id: string) => Profile | undefined;
+  // false enquanto os itens do projeto (kanban, arquivos, etc.) ainda estão chegando do servidor.
+  isProjectLoaded: (projectId: string) => boolean;
   createProject: (input: {
     name: string;
     description: string;
@@ -108,6 +151,7 @@ interface StoreContextValue extends StoreData {
   updateProject: (id: string, patch: Partial<Project>) => void;
   deleteProject: (id: string) => void;
   addMember: (projectId: string, email: string) => void;
+  removeMember: (projectId: string, userId: string) => void;
   addCard: (input: {
     projectId: string;
     columnId: string;
@@ -152,124 +196,181 @@ interface StoreContextValue extends StoreData {
 const StoreContext = React.createContext<StoreContextValue | null>(null);
 
 export function StoreProvider({ children }: { children: React.ReactNode }) {
-  const configured = React.useMemo(() => isSupabaseConfigured(), []);
-  const supabase = React.useMemo<SupabaseClient | null>(
-    () => (configured ? createClient() : null),
-    [configured]
-  );
+  const { user } = useAuth();
+  const uid = user?.uid ?? "";
 
-  const [data, setData] = React.useState<StoreData>(configured ? emptyData : seedData);
-  const [hydrated, setHydrated] = React.useState(false);
-  const [currentUserId, setCurrentUserId] = React.useState<string>(
-    configured ? "" : CURRENT_USER_ID
-  );
+  const [profiles, setProfiles] = React.useState<Profile[]>([]);
+  const [rawProjects, setRawProjects] = React.useState<Project[]>([]);
+  const [byProject, setByProject] = React.useState<Record<string, ProjectData>>({});
+  const [deleting, setDeleting] = React.useState<Set<string>>(new Set());
+  const [usersLoaded, setUsersLoaded] = React.useState(false);
+  const [projectsLoaded, setProjectsLoaded] = React.useState(false);
+  const [loadedKeys, setLoadedKeys] = React.useState<Set<string>>(new Set());
+  const [ready, setReady] = React.useState(false);
 
-  // Modo Supabase: busca os dados reais do usuário autenticado.
+  const subscriptions = React.useRef(new Map<string, Unsubscribe[]>());
+
+  // 1) Perfil próprio, lista de pessoas e projetos de que participo.
   React.useEffect(() => {
-    if (!configured || !supabase) return;
-    let cancelled = false;
-    (async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (cancelled) return;
-      if (!user) {
-        setHydrated(true);
-        return;
-      }
-      try {
-        const bootstrap = await db.fetchBootstrapData(supabase);
-        if (cancelled) return;
-        setData(bootstrap);
-        setCurrentUserId(user.id);
-      } catch (error) {
-        reportSaveError("Não foi possível carregar seus dados.", error);
-      } finally {
-        if (!cancelled) setHydrated(true);
-      }
-    })();
+    if (!user) return;
+    const { db } = getFirebase();
+
+    ensureProfile(user).catch(failure("Não foi possível criar seu perfil."));
+
+    const unsubUsers = onSnapshot(
+      collection(db, "users"),
+      (snap) => {
+        setProfiles(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Profile));
+        setUsersLoaded(true);
+      },
+      failure("Não foi possível carregar as pessoas.")
+    );
+
+    const unsubProjects = onSnapshot(
+      query(collection(db, "projects"), where("memberIds", "array-contains", user.uid)),
+      (snap) => {
+        setRawProjects(
+          snap.docs.map((d) => ({ id: d.id, ...d.data(), memberIds: d.data().memberIds ?? [] }) as Project)
+        );
+        setProjectsLoaded(true);
+      },
+      failure("Não foi possível carregar os projetos.")
+    );
+
     return () => {
-      cancelled = true;
+      unsubUsers();
+      unsubProjects();
     };
-  }, [configured, supabase]);
+  }, [user]);
 
-  // Modo demo: sincroniza uma única vez com o localStorage (sistema externo,
-  // não acessível durante o SSR) assim que o componente monta no cliente.
-  React.useEffect(() => {
-    if (configured) return;
-    try {
-      const raw = window.localStorage.getItem(STORAGE_KEY);
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      if (raw) setData(JSON.parse(raw));
-    } catch {
-      // localStorage indisponível — segue com os dados de exemplo
-    }
-    setHydrated(true);
-  }, [configured]);
+  // 2) Para cada projeto, escuta em tempo real as subcoleções (kanban, arquivos, etc.).
+  const projectIdsKey = rawProjects
+    .map((p) => p.id)
+    .sort()
+    .join(",");
 
   React.useEffect(() => {
-    if (configured || !hydrated) return;
-    try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-    } catch {
-      // armazenamento cheio ou indisponível — ignora
+    const ids = new Set(projectIdsKey ? projectIdsKey.split(",") : []);
+    const { db } = getFirebase();
+
+    for (const [projectId, unsubs] of subscriptions.current) {
+      if (ids.has(projectId)) continue;
+      unsubs.forEach((unsubscribe) => unsubscribe());
+      subscriptions.current.delete(projectId);
     }
-  }, [data, hydrated, configured]);
 
-  const currentUser =
-    data.profiles.find((p) => p.id === currentUserId) ?? data.profiles[0];
+    for (const projectId of ids) {
+      if (subscriptions.current.has(projectId)) continue;
 
-  const logActivityLocal = React.useCallback(
-    (
+      const unsubs = SUBCOLLECTIONS.map((sub) => {
+        const key = `${projectId}/${sub}`;
+        const base = collection(db, "projects", projectId, sub);
+        const q: Query<DocumentData> =
+          sub === "activity" ? query(base, orderBy("createdAt", "desc"), limit(ACTIVITY_LIMIT)) : base;
+        const markLoaded = () =>
+          setLoadedKeys((prev) => (prev.has(key) ? prev : new Set(prev).add(key)));
+
+        return onSnapshot(
+          q,
+          (snap) => {
+            const items = snap.docs.map((d) => mappers[sub](d.id, d.data()));
+            setByProject((prev) => ({
+              ...prev,
+              [projectId]: { ...(prev[projectId] ?? EMPTY_PROJECT_DATA), [sub]: items },
+            }));
+            markLoaded();
+          },
+          (error) => {
+            console.error(`Falha ao carregar ${key}`, error);
+            markLoaded();
+          }
+        );
+      });
+      subscriptions.current.set(projectId, unsubs);
+    }
+  }, [projectIdsKey]);
+
+  React.useEffect(() => {
+    const map = subscriptions.current;
+    return () => {
+      map.forEach((unsubs) => unsubs.forEach((unsubscribe) => unsubscribe()));
+      map.clear();
+    };
+  }, []);
+
+  // Só mostra o app depois que tudo carregou uma vez (evita piscar quadros vazios).
+  const allLoaded =
+    usersLoaded &&
+    projectsLoaded &&
+    rawProjects.every((p) => SUBCOLLECTIONS.every((sub) => loadedKeys.has(`${p.id}/${sub}`)));
+  if (allLoaded && !ready) setReady(true);
+
+  const data: StoreData = React.useMemo(() => {
+    const projects = rawProjects
+      .filter((p) => !deleting.has(p.id))
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    const parts = projects.map((p) => byProject[p.id] ?? EMPTY_PROJECT_DATA);
+    return {
+      profiles,
+      projects,
+      columns: parts.flatMap((d) => d.columns).sort((a, b) => a.position - b.position),
+      cards: parts.flatMap((d) => d.cards).sort((a, b) => a.position - b.position),
+      files: parts.flatMap((d) => d.files).sort(byNewest),
+      references: parts.flatMap((d) => d.references).sort(byNewest),
+      meetings: parts.flatMap((d) => d.meetings).sort((a, b) => a.startsAt.localeCompare(b.startsAt)),
+      activity: parts.flatMap((d) => d.activity).sort(byNewest),
+    };
+  }, [profiles, rawProjects, byProject, deleting]);
+
+  const currentUser: Profile = React.useMemo(
+    () =>
+      profiles.find((p) => p.id === uid) ?? {
+        id: uid,
+        name: user?.displayName || user?.email?.split("@")[0] || "Você",
+        email: user?.email ?? "",
+        avatarUrl: user?.photoURL ?? null,
+        colorHex: "#5B8DEF",
+      },
+    [profiles, uid, user]
+  );
+
+  const value: StoreContextValue = React.useMemo(() => {
+    const { db } = getFirebase();
+    const projectDoc = (projectId: string) => doc(db, "projects", projectId);
+    const itemDoc = (projectId: string, sub: Sub, id: string) =>
+      doc(db, "projects", projectId, sub, id);
+
+    function logActivity(
       projectId: string,
       action: ActivityAction,
       entityType: ActivityEntityType,
       entityLabel: string,
       detail?: string
-    ): ActivityEntry => {
+    ) {
       const entry: ActivityEntry = {
         id: newId(),
         projectId,
-        userId: currentUserId,
+        userId: uid,
         action,
         entityType,
         entityLabel,
         detail,
-        createdAt: new Date().toISOString(),
+        createdAt: nowIso(),
       };
-      setData((d) => ({ ...d, activity: [entry, ...d.activity] }));
-      return entry;
-    },
-    [currentUserId]
-  );
+      setDoc(itemDoc(projectId, "activity", entry.id), withoutId(entry)).catch(() => {
+        // o log de atividade nunca deve atrapalhar a ação principal
+      });
+    }
 
-  const logActivity = React.useCallback(
-    (
-      projectId: string,
-      action: ActivityAction,
-      entityType: ActivityEntityType,
-      entityLabel: string,
-      detail?: string
-    ) => {
-      const entry = logActivityLocal(projectId, action, entityType, entityLabel, detail);
-      if (supabase) {
-        db.insertActivity(supabase, entry).catch((error) =>
-          console.error("Falha ao registrar atividade", error)
-        );
-      }
-    },
-    [logActivityLocal, supabase]
-  );
-
-  const value: StoreContextValue = React.useMemo(
-    () => ({
+    return {
       ...data,
       currentUser,
       getProfile: (id) => data.profiles.find((p) => p.id === id),
+      isProjectLoaded: (projectId) => SUBCOLLECTIONS.every((sub) => loadedKeys.has(`${projectId}/${sub}`)),
 
       createProject: ({ name, description, status, coverImageUrl }) => {
         const id = newId();
-        const now = new Date().toISOString();
+        const now = nowIso();
         const project: Project = {
           id,
           slug: `${slugify(name) || "projeto"}-${Math.random().toString(36).slice(2, 6)}`,
@@ -277,95 +378,82 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           description,
           status,
           coverImageUrl: coverImageUrl || null,
-          createdBy: currentUserId,
-          memberIds: [currentUserId],
+          createdBy: uid,
+          memberIds: [uid],
           createdAt: now,
           updatedAt: now,
         };
-        const columns: KanbanColumn[] = DEFAULT_PHASES.map((phaseName, i) => ({
+        const columns: KanbanColumn[] = DEFAULT_PHASES.map((phaseName, position) => ({
           id: newId(),
           projectId: id,
           name: phaseName,
-          position: i,
+          position,
         }));
-        setData((d) => ({
-          ...d,
-          projects: [project, ...d.projects],
-          columns: [...d.columns, ...columns],
-        }));
-        const activityEntry = logActivityLocal(id, "created", "project", project.name);
+        const entry: ActivityEntry = {
+          id: newId(),
+          projectId: id,
+          userId: uid,
+          action: "created",
+          entityType: "project",
+          entityLabel: name,
+          createdAt: now,
+        };
 
-        if (supabase) {
-          (async () => {
-            try {
-              await db.insertProject(supabase, {
-                id,
-                slug: project.slug,
-                name,
-                description,
-                status,
-                coverImageUrl: project.coverImageUrl ?? null,
-                createdBy: currentUserId,
-              });
-              await db.insertColumns(supabase, columns);
-              await db.insertActivity(supabase, activityEntry);
-            } catch (error) {
-              reportSaveError("Não foi possível criar o projeto no servidor.", error);
-            }
-          })();
-        }
+        // O projeto precisa existir antes dos itens (as regras checam o `memberIds` dele).
+        // O Firestore envia as escritas na ordem, então não precisamos esperar entre elas.
+        const failed = failure("Não foi possível criar o projeto.");
+        setDoc(projectDoc(id), withoutId(project)).catch(failed);
+        const batch = writeBatch(db);
+        columns.forEach((c) => batch.set(itemDoc(id, "columns", c.id), withoutId(c)));
+        batch.set(itemDoc(id, "activity", entry.id), withoutId(entry));
+        batch.commit().catch(failed);
 
         return project;
       },
 
       updateProject: (id, patch) => {
-        setData((d) => ({
-          ...d,
-          projects: d.projects.map((p) =>
-            p.id === id ? { ...p, ...patch, updatedAt: new Date().toISOString() } : p
-          ),
-        }));
+        const fields = pick(patch, ["name", "description", "status", "coverImageUrl"]);
+        updateDoc(projectDoc(id), { ...fields, updatedAt: nowIso() }).catch(
+          failure("Não foi possível salvar as alterações do projeto.")
+        );
         const project = data.projects.find((p) => p.id === id);
         if (project) logActivity(id, "updated", "project", project.name);
-
-        if (supabase) {
-          db.updateProjectRow(supabase, id, patch).catch((error) =>
-            reportSaveError("Não foi possível salvar as alterações do projeto.", error)
-          );
-        }
       },
 
       deleteProject: (id) => {
-        setData((d) => ({
-          ...d,
-          projects: d.projects.filter((p) => p.id !== id),
-          columns: d.columns.filter((c) => c.projectId !== id),
-          cards: d.cards.filter((c) => c.projectId !== id),
-          files: d.files.filter((f) => f.projectId !== id),
-          references: d.references.filter((r) => r.projectId !== id),
-          meetings: d.meetings.filter((m) => m.projectId !== id),
-          activity: d.activity.filter((a) => a.projectId !== id),
-        }));
-
-        if (supabase) {
-          db.deleteProjectRow(supabase, id).catch((error) =>
-            reportSaveError("Não foi possível excluir o projeto no servidor.", error)
-          );
-        }
+        // Firestore não apaga subcoleções sozinho: apagamos os itens e, por último, o projeto.
+        setDeleting((prev) => new Set(prev).add(id));
+        (async () => {
+          try {
+            for (const sub of SUBCOLLECTIONS) {
+              const snap = await getDocs(collection(db, "projects", id, sub));
+              for (let i = 0; i < snap.docs.length; i += BATCH_LIMIT) {
+                const batch = writeBatch(db);
+                snap.docs.slice(i, i + BATCH_LIMIT).forEach((d) => batch.delete(d.ref));
+                await batch.commit();
+              }
+            }
+            await deleteDoc(projectDoc(id));
+          } catch (error) {
+            setDeleting((prev) => {
+              const next = new Set(prev);
+              next.delete(id);
+              return next;
+            });
+            failure("Não foi possível excluir o projeto. Só quem criou o projeto pode excluí-lo.")(error);
+          }
+        })();
       },
 
       addMember: (projectId, email) => {
-        const trimmed = email.trim().toLowerCase();
-        const profile = data.profiles.find((p) => p.email.toLowerCase() === trimmed);
+        const wanted = email.trim().toLowerCase();
+        const profile = data.profiles.find((p) => p.email.toLowerCase() === wanted);
         if (!profile) {
           toast.error("Pessoa não encontrada", {
-            description: configured
-              ? "Essa pessoa precisa criar uma conta no Palco primeiro (tela de login)."
-              : "Nenhum perfil de exemplo tem esse e-mail.",
+            description: "Essa pessoa precisa criar uma conta no Palco primeiro (tela de login).",
           });
           return;
         }
-
         const project = data.projects.find((p) => p.id === projectId);
         if (!project) return;
         if (project.memberIds.includes(profile.id)) {
@@ -373,63 +461,54 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           return;
         }
 
-        setData((d) => ({
-          ...d,
-          projects: d.projects.map((p) =>
-            p.id === projectId ? { ...p, memberIds: [...p.memberIds, profile.id] } : p
-          ),
-        }));
-        logActivity(
-          projectId,
-          "updated",
-          "project",
-          project.name,
-          `adicionou ${profile.name} ao projeto`
-        );
+        updateDoc(projectDoc(projectId), {
+          memberIds: arrayUnion(profile.id),
+          updatedAt: nowIso(),
+        }).catch(failure("Não foi possível adicionar a pessoa."));
+        logActivity(projectId, "updated", "project", project.name, `adicionou ${profile.name} ao projeto`);
         toast.success(`${profile.name} foi adicionado(a) ao projeto`);
+      },
 
-        if (supabase) {
-          db.addProjectMember(supabase, projectId, profile.id).catch((error) =>
-            reportSaveError("Não foi possível adicionar a pessoa no servidor.", error)
+      removeMember: (projectId, userId) => {
+        const project = data.projects.find((p) => p.id === projectId);
+        const profile = data.profiles.find((p) => p.id === userId);
+        if (!project) return;
+        updateDoc(projectDoc(projectId), {
+          memberIds: arrayRemove(userId),
+          updatedAt: nowIso(),
+        }).catch(failure("Não foi possível remover a pessoa."));
+        // Só dá para registrar atividade enquanto ainda somos membros.
+        if (userId !== uid) {
+          logActivity(
+            projectId,
+            "updated",
+            "project",
+            project.name,
+            `removeu ${profile?.name ?? "uma pessoa"} do projeto`
           );
         }
       },
 
       addCard: ({ projectId, columnId, title, description, labels, dueDate }) => {
-        const id = newId();
-        const now = new Date().toISOString();
-        const siblings = data.cards.filter((c) => c.columnId === columnId);
+        const now = nowIso();
         const card: KanbanCard = {
-          id,
+          id: newId(),
           columnId,
           projectId,
           title,
           description,
-          position: siblings.length,
+          position: data.cards.filter((c) => c.columnId === columnId).length,
           assigneeIds: [],
           labels: labels ?? [],
           dueDate: dueDate ?? null,
-          createdBy: currentUserId,
+          createdBy: uid,
           createdAt: now,
           updatedAt: now,
         };
-        setData((d) => ({ ...d, cards: [...d.cards, card] }));
+        setDoc(itemDoc(projectId, "cards", card.id), withoutId(card)).catch(
+          failure("Não foi possível salvar o card.")
+        );
         logActivity(projectId, "created", "card", title);
-
-        if (supabase) {
-          db.insertCard(supabase, {
-            id,
-            columnId,
-            projectId,
-            title,
-            description,
-            position: card.position,
-            labels: card.labels,
-            dueDate: card.dueDate ?? null,
-            createdBy: currentUserId,
-          }).catch((error) => reportSaveError("Não foi possível salvar o card.", error));
-        }
-
         return card;
       },
 
@@ -441,27 +520,20 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         const destCards = data.cards
           .filter((c) => c.columnId === toColumnId && c.id !== cardId)
           .sort((a, b) => a.position - b.position);
-        const clampedIndex = Math.max(0, Math.min(toIndex, destCards.length));
-        destCards.splice(clampedIndex, 0, movingCard);
-        const destPositions = new Map(destCards.map((c, idx) => [c.id, idx]));
+        destCards.splice(Math.max(0, Math.min(toIndex, destCards.length)), 0, movingCard);
 
-        setData((d) => ({
-          ...d,
-          cards: d.cards.map((c) => {
-            if (c.id === cardId) {
-              return {
-                ...c,
-                columnId: toColumnId,
-                position: destPositions.get(c.id) ?? 0,
-                updatedAt: new Date().toISOString(),
-              };
-            }
-            if (destPositions.has(c.id)) {
-              return { ...c, position: destPositions.get(c.id)! };
-            }
-            return c;
-          }),
-        }));
+        const batch = writeBatch(db);
+        const now = nowIso();
+        destCards.forEach((card, position) => {
+          const changes =
+            card.id === cardId
+              ? { columnId: toColumnId, position, updatedAt: now }
+              : card.position !== position
+                ? { position }
+                : null;
+          if (changes) batch.update(itemDoc(movingCard.projectId, "cards", card.id), changes);
+        });
+        batch.commit().catch(failure("Não foi possível salvar a posição do card."));
 
         if (columnChanged) {
           const column = data.columns.find((c) => c.id === toColumnId);
@@ -473,94 +545,65 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
             column ? `moveu para ${column.name}` : undefined
           );
         }
-
-        if (supabase) {
-          const updates = Array.from(destPositions.entries()).map(([id, position]) => ({
-            id,
-            columnId: toColumnId,
-            position,
-          }));
-          db.updateCardPositions(supabase, updates).catch((error) =>
-            reportSaveError("Não foi possível salvar a posição do card.", error)
-          );
-        }
       },
 
       updateCard: (id, patch) => {
-        setData((d) => ({
-          ...d,
-          cards: d.cards.map((c) =>
-            c.id === id ? { ...c, ...patch, updatedAt: new Date().toISOString() } : c
-          ),
-        }));
         const card = data.cards.find((c) => c.id === id);
-        if (card) logActivity(card.projectId, "updated", "card", card.title);
-
-        if (supabase) {
-          db.updateCardRow(supabase, id, patch).catch((error) =>
-            reportSaveError("Não foi possível salvar as alterações do card.", error)
-          );
-        }
+        if (!card) return;
+        const fields = pick(patch, [
+          "title",
+          "description",
+          "labels",
+          "dueDate",
+          "assigneeIds",
+          "columnId",
+          "position",
+        ]);
+        updateDoc(itemDoc(card.projectId, "cards", id), { ...fields, updatedAt: nowIso() }).catch(
+          failure("Não foi possível salvar as alterações do card.")
+        );
+        logActivity(card.projectId, "updated", "card", card.title);
       },
 
       deleteCard: (id) => {
         const card = data.cards.find((c) => c.id === id);
-        setData((d) => ({ ...d, cards: d.cards.filter((c) => c.id !== id) }));
-        if (card) logActivity(card.projectId, "deleted", "card", card.title);
-
-        if (supabase) {
-          db.deleteCardRow(supabase, id).catch((error) =>
-            reportSaveError("Não foi possível excluir o card no servidor.", error)
-          );
-        }
+        if (!card) return;
+        deleteDoc(itemDoc(card.projectId, "cards", id)).catch(
+          failure("Não foi possível excluir o card.")
+        );
+        logActivity(card.projectId, "deleted", "card", card.title);
       },
 
       addFile: ({ projectId, name, url, type, notes }) => {
-        const id = newId();
         const file: ProjectFile = {
-          id,
+          id: newId(),
           projectId,
           name,
           url,
           type,
           notes,
-          addedBy: currentUserId,
-          addedAt: new Date().toISOString(),
+          addedBy: uid,
+          addedAt: nowIso(),
         };
-        setData((d) => ({ ...d, files: [file, ...d.files] }));
+        setDoc(itemDoc(projectId, "files", file.id), withoutId(file)).catch(
+          failure("Não foi possível salvar o arquivo.")
+        );
         logActivity(projectId, "created", "file", name);
-
-        if (supabase) {
-          db.insertFile(supabase, {
-            id,
-            projectId,
-            name,
-            url,
-            type,
-            notes,
-            addedBy: currentUserId,
-          }).catch((error) => reportSaveError("Não foi possível salvar o arquivo.", error));
-        }
-
         return file;
       },
 
       deleteFile: (id) => {
         const file = data.files.find((f) => f.id === id);
-        setData((d) => ({ ...d, files: d.files.filter((f) => f.id !== id) }));
-        if (file) logActivity(file.projectId, "deleted", "file", file.name);
-
-        if (supabase) {
-          db.deleteFileRow(supabase, id).catch((error) =>
-            reportSaveError("Não foi possível excluir o arquivo no servidor.", error)
-          );
-        }
+        if (!file) return;
+        deleteDoc(itemDoc(file.projectId, "files", id)).catch(
+          failure("Não foi possível excluir o arquivo.")
+        );
+        logActivity(file.projectId, "deleted", "file", file.name);
       },
 
       addReference: ({ projectId, type, url, title, sourceLabel, thumbnailUrl, tags }) => {
-        const id = newId();
         const reference: ProjectReference = {
-          id,
+          id: newId(),
           projectId,
           type,
           url,
@@ -568,113 +611,67 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           sourceLabel,
           thumbnailUrl: thumbnailUrl ?? null,
           tags: tags ?? [],
-          addedBy: currentUserId,
-          addedAt: new Date().toISOString(),
+          addedBy: uid,
+          addedAt: nowIso(),
         };
-        setData((d) => ({ ...d, references: [reference, ...d.references] }));
+        setDoc(itemDoc(projectId, "references", reference.id), withoutId(reference)).catch(
+          failure("Não foi possível salvar a referência.")
+        );
         logActivity(projectId, "created", "reference", title || url);
-
-        if (supabase) {
-          db.insertReference(supabase, {
-            id,
-            projectId,
-            type,
-            url,
-            title,
-            sourceLabel,
-            thumbnailUrl: reference.thumbnailUrl ?? null,
-            tags: reference.tags,
-            addedBy: currentUserId,
-          }).catch((error) => reportSaveError("Não foi possível salvar a referência.", error));
-        }
-
         return reference;
       },
 
       deleteReference: (id) => {
         const reference = data.references.find((r) => r.id === id);
-        setData((d) => ({ ...d, references: d.references.filter((r) => r.id !== id) }));
-        if (reference)
-          logActivity(reference.projectId, "deleted", "reference", reference.title || reference.url);
-
-        if (supabase) {
-          db.deleteReferenceRow(supabase, id).catch((error) =>
-            reportSaveError("Não foi possível excluir a referência no servidor.", error)
-          );
-        }
+        if (!reference) return;
+        deleteDoc(itemDoc(reference.projectId, "references", id)).catch(
+          failure("Não foi possível excluir a referência.")
+        );
+        logActivity(reference.projectId, "deleted", "reference", reference.title || reference.url);
       },
 
       addMeeting: ({ projectId, title, startsAt, endsAt, location, notes }) => {
-        const id = newId();
         const meeting: Meeting = {
-          id,
+          id: newId(),
           projectId,
           title,
           startsAt,
           endsAt: endsAt ?? null,
           location,
           notes,
-          attendeeIds: [currentUserId],
-          createdBy: currentUserId,
-          createdAt: new Date().toISOString(),
+          attendeeIds: [uid],
+          createdBy: uid,
+          createdAt: nowIso(),
         };
-        setData((d) => ({ ...d, meetings: [...d.meetings, meeting] }));
+        setDoc(itemDoc(projectId, "meetings", meeting.id), withoutId(meeting)).catch(
+          failure("Não foi possível salvar a reunião.")
+        );
         logActivity(projectId, "created", "meeting", title);
-
-        if (supabase) {
-          db.insertMeeting(supabase, {
-            id,
-            projectId,
-            title,
-            startsAt,
-            endsAt: meeting.endsAt ?? null,
-            location,
-            notes,
-            createdBy: currentUserId,
-          }).catch((error) => reportSaveError("Não foi possível salvar a reunião.", error));
-        }
-
         return meeting;
       },
 
       updateMeeting: (id, patch) => {
-        setData((d) => ({
-          ...d,
-          meetings: d.meetings.map((m) => (m.id === id ? { ...m, ...patch } : m)),
-        }));
         const meeting = data.meetings.find((m) => m.id === id);
-        if (meeting) logActivity(meeting.projectId, "updated", "meeting", meeting.title);
-
-        if (supabase) {
-          db.updateMeetingRow(supabase, id, patch).catch((error) =>
-            reportSaveError("Não foi possível salvar as alterações da reunião.", error)
-          );
-        }
+        if (!meeting) return;
+        const fields = pick(patch, ["title", "startsAt", "endsAt", "location", "notes", "attendeeIds"]);
+        updateDoc(itemDoc(meeting.projectId, "meetings", id), fields).catch(
+          failure("Não foi possível salvar as alterações da reunião.")
+        );
+        logActivity(meeting.projectId, "updated", "meeting", meeting.title);
       },
 
       deleteMeeting: (id) => {
         const meeting = data.meetings.find((m) => m.id === id);
-        setData((d) => ({ ...d, meetings: d.meetings.filter((m) => m.id !== id) }));
-        if (meeting) logActivity(meeting.projectId, "deleted", "meeting", meeting.title);
-
-        if (supabase) {
-          db.deleteMeetingRow(supabase, id).catch((error) =>
-            reportSaveError("Não foi possível excluir a reunião no servidor.", error)
-          );
-        }
+        if (!meeting) return;
+        deleteDoc(itemDoc(meeting.projectId, "meetings", id)).catch(
+          failure("Não foi possível excluir a reunião.")
+        );
+        logActivity(meeting.projectId, "deleted", "meeting", meeting.title);
       },
-    }),
-    [data, currentUser, currentUserId, logActivity, logActivityLocal, supabase, configured]
-  );
+    };
+  }, [data, currentUser, uid, loadedKeys]);
 
-  if (!hydrated) {
-    return (
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="size-6 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-foreground" />
-      </div>
-    );
-  }
-
+  if (!ready) return <FullPageSpinner />;
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
 }
 

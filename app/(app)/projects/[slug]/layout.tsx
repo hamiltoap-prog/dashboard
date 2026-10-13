@@ -13,7 +13,7 @@ import { useProject, useStore } from "@/lib/store";
 
 export default function ProjectLayout({ children }: { children: React.ReactNode }) {
   const project = useProject();
-  const { getProfile } = useStore();
+  const { getProfile, isProjectLoaded } = useStore();
 
   if (!project) {
     return (
@@ -22,6 +22,14 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
         <Link href="/" className="text-sm text-primary hover:underline">
           Voltar para o dashboard
         </Link>
+      </div>
+    );
+  }
+
+  if (!isProjectLoaded(project.id)) {
+    return (
+      <div className="flex justify-center py-24" role="status" aria-label="Carregando projeto">
+        <div className="size-6 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-foreground" />
       </div>
     );
   }

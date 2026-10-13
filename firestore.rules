@@ -1,0 +1,103 @@
+rules_version = '2';
+
+// Regras de segurança do Palco. Publique em: Firebase Console > Firestore Database > Rules
+// (ou com `firebase deploy --only firestore:rules`).
+//
+// Modelo:
+//   users/{uid}                      perfil público (nome, e-mail, cor)
+//   projects/{projectId}             projeto; `memberIds` lista quem tem acesso
+//   projects/{projectId}/{sub}/{id}  columns | cards | files | references | meetings | activity
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function projectPath(projectId) {
+      return /databases/$(database)/documents/projects/$(projectId);
+    }
+
+    function isMember(projectId) {
+      return signedIn() && request.auth.uid in get(projectPath(projectId)).data.memberIds;
+    }
+
+    function isOwner(projectId) {
+      return signedIn() && request.auth.uid == get(projectPath(projectId)).data.createdBy;
+    }
+
+    // ---------------------------------------------------------------- perfis
+    match /users/{uid} {
+      // Qualquer pessoa logada vê os perfis (é assim que se adiciona alguém ao projeto pelo e-mail).
+      allow read: if signedIn();
+
+      allow create: if signedIn()
+        && request.auth.uid == uid
+        && request.auth.token.email != null
+        && request.resource.data.email == request.auth.token.email.lower()
+        && request.resource.data.keys().hasOnly(['name', 'email', 'avatarUrl', 'colorHex', 'createdAt']);
+
+      allow update: if signedIn()
+        && request.auth.uid == uid
+        && request.resource.data.email == resource.data.email
+        && request.resource.data.keys().hasOnly(['name', 'email', 'avatarUrl', 'colorHex', 'createdAt']);
+    }
+
+    // -------------------------------------------------------------- projetos
+    match /projects/{projectId} {
+      allow read: if signedIn() && request.auth.uid in resource.data.memberIds;
+
+      allow create: if signedIn()
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.memberIds == [request.auth.uid];
+
+      allow update: if signedIn()
+        && request.auth.uid in resource.data.memberIds
+        && request.resource.data.createdBy == resource.data.createdBy
+        && (
+          // editar dados ou adicionar pessoas (ninguém é removido)
+          request.resource.data.memberIds.hasAll(resource.data.memberIds)
+          // quem criou o projeto pode remover qualquer pessoa
+          || request.auth.uid == resource.data.createdBy
+          // qualquer pessoa pode sair do projeto (só removendo a si mesma)
+          || resource.data.memberIds.removeAll(request.resource.data.memberIds) == [request.auth.uid]
+        );
+
+      // Só quem criou o projeto pode excluí-lo.
+      allow delete: if signedIn() && request.auth.uid == resource.data.createdBy;
+
+      // ----------------------------------------------------- itens do projeto
+      match /columns/{id} {
+        allow read, update, delete: if isMember(projectId);
+        allow create: if isMember(projectId);
+      }
+
+      match /cards/{id} {
+        allow read, update, delete: if isMember(projectId);
+        allow create: if isMember(projectId) && request.resource.data.createdBy == request.auth.uid;
+      }
+
+      match /files/{id} {
+        allow read, update, delete: if isMember(projectId);
+        allow create: if isMember(projectId) && request.resource.data.addedBy == request.auth.uid;
+      }
+
+      match /references/{id} {
+        allow read, update, delete: if isMember(projectId);
+        allow create: if isMember(projectId) && request.resource.data.addedBy == request.auth.uid;
+      }
+
+      match /meetings/{id} {
+        allow read, update, delete: if isMember(projectId);
+        allow create: if isMember(projectId) && request.resource.data.createdBy == request.auth.uid;
+      }
+
+      // O histórico não pode ser editado; só o dono do projeto o apaga (ao excluir o projeto).
+      match /activity/{id} {
+        allow read: if isMember(projectId);
+        allow create: if isMember(projectId) && request.resource.data.userId == request.auth.uid;
+        allow delete: if isOwner(projectId);
+      }
+    }
+  }
+}

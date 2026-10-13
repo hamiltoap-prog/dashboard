@@ -1,7 +1,6 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { toast } from "sonner";
 import { KeyRound, LogOut, User } from "lucide-react";
 
 import {
@@ -13,25 +12,15 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { UserAvatar } from "@/components/user-avatar";
-import { isSupabaseConfigured } from "@/lib/supabase/is-configured";
+import { signOutUser } from "@/lib/firebase/auth-actions";
 import type { Profile } from "@/lib/types";
 
 export function UserMenu({ user }: { user: Profile }) {
   const router = useRouter();
-  const configured = isSupabaseConfigured();
 
   async function handleSignOut() {
-    if (!configured) {
-      toast.info("Modo demo: conecte o Supabase para ativar contas reais.", {
-        description: "Veja o README para configurar autenticação.",
-      });
-      return;
-    }
-    const { createClient } = await import("@/lib/supabase/client");
-    const supabase = createClient();
-    await supabase.auth.signOut();
-    router.push("/login");
-    router.refresh();
+    await signOutUser();
+    router.replace("/login");
   }
 
   return (
@@ -49,7 +38,7 @@ export function UserMenu({ user }: { user: Profile }) {
           <User />
           Perfil
         </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => router.push("/reset-password")}>
+        <DropdownMenuItem onSelect={() => router.push("/alterar-senha")}>
           <KeyRound />
           Alterar senha
         </DropdownMenuItem>

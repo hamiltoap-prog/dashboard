@@ -35,7 +35,8 @@ export function ProjectActionsMenu({
   redirectOnDelete?: boolean;
 }) {
   const router = useRouter();
-  const { deleteProject } = useStore();
+  const { deleteProject, currentUser } = useStore();
+  const isOwner = project.createdBy === currentUser.id;
   const [editOpen, setEditOpen] = React.useState(false);
   const [deleteOpen, setDeleteOpen] = React.useState(false);
 
@@ -70,10 +71,12 @@ export function ProjectActionsMenu({
             <Pencil />
             Editar projeto
           </DropdownMenuItem>
-          <DropdownMenuItem variant="destructive" onSelect={() => setDeleteOpen(true)}>
-            <Trash2 />
-            Excluir projeto
-          </DropdownMenuItem>
+          {isOwner && (
+            <DropdownMenuItem variant="destructive" onSelect={() => setDeleteOpen(true)}>
+              <Trash2 />
+              Excluir projeto
+            </DropdownMenuItem>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
 

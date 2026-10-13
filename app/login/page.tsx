@@ -1,79 +1,92 @@
 "use client";
 
 import * as React from "react";
-import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Drama, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
+import { FullPageSpinner } from "@/components/full-page-spinner";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ThemeToggle } from "@/components/theme-toggle";
-import { translateAuthError } from "@/lib/auth-errors";
-import { isSupabaseConfigured } from "@/lib/supabase/is-configured";
+import { isUserCancelledAuth, translateAuthError } from "@/lib/auth-errors";
+import { SetupNotice, useAuth } from "@/lib/firebase/auth";
+import {
+  sendPasswordReset,
+  signInWithEmail,
+  signInWithGoogle,
+  signUpWithEmail,
+} from "@/lib/firebase/auth-actions";
+
+type Mode = "sign-in" | "sign-up" | "forgot";
 
 export default function LoginPage() {
   return (
-    <React.Suspense fallback={null}>
-      <LoginForm />
+    <React.Suspense fallback={<FullPageSpinner />}>
+      <LoginScreen />
     </React.Suspense>
   );
 }
 
-function LoginForm() {
+// Só aceita caminhos internos, para o `next` não virar um redirecionamento para outro site.
+function safeNext(value: string | null) {
+  return value && value.startsWith("/") && !value.startsWith("//") ? value : "/";
+}
+
+function LoginScreen() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const configured = isSupabaseConfigured();
+  const { status } = useAuth();
 
-  const [mode, setMode] = React.useState<"sign-in" | "sign-up" | "forgot">("sign-in");
+  const [mode, setMode] = React.useState<Mode>("sign-in");
   const [resetSent, setResetSent] = React.useState(false);
-  const linkError = searchParams.get("error");
   const [name, setName] = React.useState("");
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [loading, setLoading] = React.useState(false);
 
+  React.useEffect(() => {
+    if (status === "signedIn") router.replace(safeNext(searchParams.get("next")));
+  }, [status, router, searchParams]);
+
+  if (status === "unconfigured") return <SetupNotice />;
+  if (status !== "signedOut") return <FullPageSpinner />;
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!configured) {
-      toast.info("Modo demo ativo", {
-        description: "Conecte um projeto Supabase (veja o README) para ativar contas reais.",
-      });
-      return;
-    }
-
     setLoading(true);
     try {
-      const { createClient } = await import("@/lib/supabase/client");
-      const supabase = createClient();
-
       if (mode === "forgot") {
-        const { error } = await supabase.auth.resetPasswordForEmail(email, {
-          redirectTo: `${window.location.origin}/auth/callback?next=/reset-password`,
-        });
-        if (error) throw error;
+        await sendPasswordReset(email.trim());
         setResetSent(true);
       } else if (mode === "sign-up") {
-        const { error } = await supabase.auth.signUp({
-          email,
-          password,
-          options: { data: { name } },
-        });
-        if (error) throw error;
-        toast.success("Conta criada! Verifique seu e-mail para confirmar.");
+        await signUpWithEmail(name.trim(), email.trim(), password);
       } else {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) throw error;
-        router.push(searchParams.get("next") || "/");
-        router.refresh();
+        await signInWithEmail(email.trim(), password);
       }
     } catch (error) {
       toast.error(translateAuthError(error));
     } finally {
       setLoading(false);
     }
+  }
+
+  async function handleGoogle() {
+    setLoading(true);
+    try {
+      await signInWithGoogle();
+    } catch (error) {
+      if (!isUserCancelledAuth(error)) toast.error(translateAuthError(error));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function switchMode(next: Mode) {
+    setMode(next);
+    setResetSent(false);
   }
 
   return (
@@ -92,112 +105,140 @@ function LoginForm() {
 
       <Card className="w-full max-w-sm">
         <CardContent className="flex flex-col gap-4">
-          {!configured && (
-            <div className="rounded-xl bg-secondary p-3 text-xs text-muted-foreground">
-              Modo demo: o dashboard já funciona com dados de exemplo, sem precisar entrar.{" "}
-              <Link href="/" className="font-medium text-primary hover:underline">
-                Continuar em modo demo →
-              </Link>
-            </div>
-          )}
-
-          {linkError && (
-            <div className="rounded-xl bg-destructive/10 p-3 text-xs text-destructive">
-              Esse link é inválido ou expirou. Peça um novo em “Esqueci minha senha” e abra o
-              e-mail no mesmo navegador/aparelho em que fez o pedido.
-            </div>
-          )}
-
           {mode === "forgot" && resetSent ? (
             <div className="flex flex-col gap-3 text-sm">
               <p className="font-medium">Verifique seu e-mail</p>
               <p className="text-muted-foreground">
                 Se existir uma conta com <span className="text-foreground">{email}</span>, enviamos
-                um link para você criar uma nova senha. Abra-o no mesmo navegador em que fez o
-                pedido. Se não chegar em alguns minutos, olhe o spam.
+                um link para você criar uma nova senha. Se não chegar em alguns minutos, olhe o
+                spam.
               </p>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => {
-                  setMode("sign-in");
-                  setResetSent(false);
-                }}
-              >
+              <Button type="button" variant="outline" onClick={() => switchMode("sign-in")}>
                 Voltar para o login
               </Button>
             </div>
           ) : (
-          <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-            {mode === "forgot" && (
-              <p className="text-sm text-muted-foreground">
-                Informe o e-mail da sua conta e enviaremos um link para criar uma nova senha.
-              </p>
-            )}
-            {mode === "sign-up" && (
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="name">Nome</Label>
-                <Input id="name" value={name} onChange={(e) => setName(e.target.value)} required />
-              </div>
-            )}
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="email">E-mail</Label>
-              <Input
-                id="email"
-                type="email"
-                autoComplete="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-              />
-            </div>
-            {mode !== "forgot" && (
-            <div className="flex flex-col gap-1.5">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="password">Senha</Label>
-                {mode === "sign-in" && (
-                  <button
-                    type="button"
-                    className="text-xs font-medium text-primary hover:underline"
-                    onClick={() => setMode("forgot")}
-                  >
-                    Esqueci minha senha
-                  </button>
+            <>
+              {mode !== "forgot" && (
+                <>
+                  <Button type="button" variant="outline" onClick={handleGoogle} disabled={loading}>
+                    <GoogleIcon />
+                    Continuar com Google
+                  </Button>
+                  <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                    <span className="h-px flex-1 bg-border" />
+                    ou
+                    <span className="h-px flex-1 bg-border" />
+                  </div>
+                </>
+              )}
+
+              <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+                {mode === "forgot" && (
+                  <p className="text-sm text-muted-foreground">
+                    Informe o e-mail da sua conta e enviaremos um link para criar uma nova senha.
+                  </p>
                 )}
-              </div>
-              <Input
-                id="password"
-                type="password"
-                autoComplete={mode === "sign-up" ? "new-password" : "current-password"}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                minLength={6}
-                required
-              />
-            </div>
-            )}
+                {mode === "sign-up" && (
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="name">Nome</Label>
+                    <Input
+                      id="name"
+                      autoComplete="name"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      required
+                    />
+                  </div>
+                )}
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="email">E-mail</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    autoComplete="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                  />
+                </div>
+                {mode !== "forgot" && (
+                  <div className="flex flex-col gap-1.5">
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="password">Senha</Label>
+                      {mode === "sign-in" && (
+                        <button
+                          type="button"
+                          className="text-xs font-medium text-primary hover:underline"
+                          onClick={() => switchMode("forgot")}
+                        >
+                          Esqueci minha senha
+                        </button>
+                      )}
+                    </div>
+                    <Input
+                      id="password"
+                      type="password"
+                      autoComplete={mode === "sign-up" ? "new-password" : "current-password"}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      minLength={6}
+                      required
+                    />
+                  </div>
+                )}
 
-            <Button type="submit" disabled={loading} className="mt-1">
-              {loading && <Loader2 className="animate-spin" />}
-              {mode === "sign-up" ? "Criar conta" : mode === "forgot" ? "Enviar link" : "Entrar"}
-            </Button>
-          </form>
-          )}
+                <Button type="submit" disabled={loading} className="mt-1">
+                  {loading && <Loader2 className="animate-spin" />}
+                  {mode === "sign-up"
+                    ? "Criar conta"
+                    : mode === "forgot"
+                      ? "Enviar link"
+                      : "Entrar"}
+                </Button>
+              </form>
 
-          {!(mode === "forgot" && resetSent) && (
-            <p className="text-center text-sm text-muted-foreground">
-              {mode === "sign-up" ? "Já tem conta?" : mode === "forgot" ? "Lembrou a senha?" : "Ainda não tem conta?"}{" "}
-              <button
-                type="button"
-                className="font-medium text-primary hover:underline"
-                onClick={() => setMode(mode === "sign-in" ? "sign-up" : "sign-in")}
-              >
-                {mode === "sign-in" ? "Criar conta" : "Entrar"}
-              </button>
-            </p>
+              <p className="text-center text-sm text-muted-foreground">
+                {mode === "sign-in"
+                  ? "Ainda não tem conta?"
+                  : mode === "sign-up"
+                    ? "Já tem conta?"
+                    : "Lembrou a senha?"}{" "}
+                <button
+                  type="button"
+                  className="font-medium text-primary hover:underline"
+                  onClick={() => switchMode(mode === "sign-in" ? "sign-up" : "sign-in")}
+                >
+                  {mode === "sign-in" ? "Criar conta" : "Entrar"}
+                </button>
+              </p>
+            </>
           )}
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+function GoogleIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="size-4" aria-hidden="true">
+      <path
+        fill="#4285F4"
+        d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.27-4.74 3.27-8.1z"
+      />
+      <path
+        fill="#34A853"
+        d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84A11 11 0 0 0 12 23z"
+      />
+      <path
+        fill="#FBBC05"
+        d="M5.84 14.1a6.6 6.6 0 0 1 0-4.2V7.06H2.18a11 11 0 0 0 0 9.88l3.66-2.84z"
+      />
+      <path
+        fill="#EA4335"
+        d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1A11 11 0 0 0 2.18 7.06l3.66 2.84C6.71 7.31 9.14 5.38 12 5.38z"
+      />
+    </svg>
   );
 }

@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { UserPlus } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { LogOut, UserMinus, UserPlus } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -19,7 +20,9 @@ import { useStore } from "@/lib/store";
 import type { Project } from "@/lib/types";
 
 export function ProjectMembersDialog({ project }: { project: Project }) {
-  const { getProfile, addMember } = useStore();
+  const router = useRouter();
+  const { getProfile, addMember, removeMember, currentUser } = useStore();
+  const isOwner = project.createdBy === currentUser.id;
   const [open, setOpen] = React.useState(false);
   const [email, setEmail] = React.useState("");
 
@@ -65,10 +68,43 @@ export function ProjectMembersDialog({ project }: { project: Project }) {
           {members.map((member) => (
             <li key={member.id} className="flex items-center gap-3 rounded-xl border border-border p-2.5">
               <UserAvatar profile={member} className="size-9" />
-              <div className="flex min-w-0 flex-col">
-                <span className="truncate text-sm font-medium">{member.name}</span>
+              <div className="flex min-w-0 flex-1 flex-col">
+                <span className="truncate text-sm font-medium">
+                  {member.name}
+                  {member.id === project.createdBy && (
+                    <span className="ml-1.5 text-xs font-normal text-muted-foreground">(dono)</span>
+                  )}
+                </span>
                 <span className="truncate text-xs text-muted-foreground">{member.email}</span>
               </div>
+              {isOwner && member.id !== currentUser.id && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="shrink-0 text-destructive hover:bg-destructive/10"
+                  onClick={() => removeMember(project.id, member.id)}
+                >
+                  <UserMinus />
+                  Remover
+                </Button>
+              )}
+              {!isOwner && member.id === currentUser.id && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="shrink-0 text-destructive hover:bg-destructive/10"
+                  onClick={() => {
+                    removeMember(project.id, member.id);
+                    setOpen(false);
+                    router.push("/");
+                  }}
+                >
+                  <LogOut />
+                  Sair
+                </Button>
+              )}
             </li>
           ))}
         </ul>
