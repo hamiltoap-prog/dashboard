@@ -18,20 +18,20 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import type { Meeting } from "@/lib/types";
+import type { Occurrence } from "@/lib/recurrence";
 
 const WEEKDAYS = ["D", "S", "T", "Q", "Q", "S", "S"];
 
 export function MonthCalendar({
   month,
   onMonthChange,
-  meetings,
+  occurrences,
   selectedDay,
   onSelectDay,
 }: {
   month: Date;
   onMonthChange: (date: Date) => void;
-  meetings: Meeting[];
+  occurrences: Occurrence[];
   selectedDay: Date | null;
   onSelectDay: (date: Date | null) => void;
 }) {
@@ -40,7 +40,7 @@ export function MonthCalendar({
   const days = eachDayOfInterval({ start: gridStart, end: gridEnd });
 
   const meetingCountByDay = (day: Date) =>
-    meetings.filter((m) => isSameDay(new Date(m.startsAt), day)).length;
+    occurrences.filter((o) => isSameDay(new Date(o.startsAt), day)).length;
 
   return (
     <div className="rounded-2xl border border-border bg-card p-4">

@@ -2,15 +2,17 @@
 
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { CalendarPlus, MapPin } from "lucide-react";
+import { CalendarPlus, Download, MapPin, Repeat } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { googleCalendarUrl } from "@/lib/google-calendar";
 import { googleMapsSearchUrl } from "@/lib/google-maps";
-import type { Meeting } from "@/lib/types";
+import { downloadIcs, icsFilename } from "@/lib/ics";
+import { describeRecurrence, type Occurrence } from "@/lib/recurrence";
 
-export function MeetingItem({ meeting, onClick }: { meeting: Meeting; onClick: () => void }) {
-  const start = new Date(meeting.startsAt);
+export function MeetingItem({ occurrence, onClick }: { occurrence: Occurrence; onClick: () => void }) {
+  const { meeting } = occurrence;
+  const start = new Date(occurrence.startsAt);
 
   return (
     <div className="flex items-start gap-3 rounded-xl border border-border bg-card p-3">
@@ -37,6 +39,12 @@ export function MeetingItem({ meeting, onClick }: { meeting: Meeting; onClick: (
           <span className="text-xs text-muted-foreground">
             {format(start, "EEEE, HH:mm", { locale: ptBR })}
           </span>
+          {meeting.recurrence && (
+            <span className="flex w-fit items-center gap-1 text-xs text-muted-foreground">
+              <Repeat className="size-3 shrink-0" />
+              {describeRecurrence(meeting.recurrence, new Date(meeting.startsAt))}
+            </span>
+          )}
           {meeting.location && (
             <a
               href={googleMapsSearchUrl(meeting.location)}
@@ -56,6 +64,19 @@ export function MeetingItem({ meeting, onClick }: { meeting: Meeting; onClick: (
         </div>
       </div>
 
+      <Button
+        variant="ghost"
+        size="icon"
+        className="shrink-0"
+        title="Baixar para Apple Calendar, Outlook e outros (.ics)"
+        aria-label="Baixar arquivo .ics"
+        onClick={(e) => {
+          e.stopPropagation();
+          downloadIcs([meeting], icsFilename(meeting.title), meeting.title);
+        }}
+      >
+        <Download className="size-4" />
+      </Button>
       <Button variant="ghost" size="icon" className="shrink-0" asChild>
         <a
           href={googleCalendarUrl(meeting)}

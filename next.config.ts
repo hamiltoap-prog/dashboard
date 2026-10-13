@@ -31,6 +31,18 @@ const firebaseEnv = Object.fromEntries(
 
 const nextConfig: NextConfig = {
   env: firebaseEnv,
+  async headers() {
+    return [
+      {
+        // O service worker nunca pode ficar preso no cache, senão as atualizações do app não chegam.
+        source: "/sw.js",
+        headers: [
+          { key: "Content-Type", value: "application/javascript; charset=utf-8" },
+          { key: "Cache-Control", value: "no-cache, no-store, must-revalidate" },
+        ],
+      },
+    ];
+  },
 };
 
 export default nextConfig;

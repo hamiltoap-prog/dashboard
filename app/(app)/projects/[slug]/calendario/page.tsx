@@ -1,14 +1,25 @@
 "use client";
 
 import * as React from "react";
-import { isSameDay } from "date-fns";
-import { Plus } from "lucide-react";
+import {
+  addDays,
+  endOfDay,
+  endOfMonth,
+  endOfWeek,
+  startOfDay,
+  startOfMonth,
+  startOfWeek,
+  subDays,
+} from "date-fns";
+import { Download, Plus } from "lucide-react";
 
 import { MonthCalendar } from "@/components/calendar/month-calendar";
 import { MeetingDialog } from "@/components/calendar/meeting-dialog";
 import { MeetingItem } from "@/components/calendar/meeting-item";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { downloadIcs } from "@/lib/ics";
+import { occurrencesOf, type Occurrence } from "@/lib/recurrence";
 import { useProject, useStore } from "@/lib/store";
 import type { Meeting } from "@/lib/types";
 
@@ -20,39 +31,58 @@ export default function ProjectCalendarPage() {
   const [selectedDay, setSelectedDay] = React.useState<Date | null>(null);
   const [dialogOpen, setDialogOpen] = React.useState(false);
   const [editingMeeting, setEditingMeeting] = React.useState<Meeting | null>(null);
+  const [editingOccurrence, setEditingOccurrence] = React.useState<string | null>(null);
   const [dialogKey, setDialogKey] = React.useState(0);
 
   if (!project) return null;
 
-  const projectMeetings = meetings
-    .filter((m) => m.projectId === project.id)
-    .sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime());
+  const projectMeetings = meetings.filter((m) => m.projectId === project.id);
 
+  // Reuniões recorrentes não têm fim: lista só uma janela (próximos 90 dias e últimos 60),
+  // ou o dia escolhido no calendário.
   const now = new Date();
-  const visibleMeetings = selectedDay
-    ? projectMeetings.filter((m) => isSameDay(new Date(m.startsAt), selectedDay))
-    : projectMeetings;
+  const monthStart = startOfWeek(startOfMonth(month));
+  const monthEnd = endOfWeek(endOfMonth(month));
+  const monthOccurrences = occurrencesOf(projectMeetings, monthStart, monthEnd);
 
-  const upcoming = visibleMeetings.filter((m) => new Date(m.startsAt) >= now);
-  const past = visibleMeetings
-    .filter((m) => new Date(m.startsAt) < now)
-    .sort((a, b) => new Date(b.startsAt).getTime() - new Date(a.startsAt).getTime());
+  let upcoming: Occurrence[];
+  let past: Occurrence[];
+  if (selectedDay) {
+    const day = occurrencesOf(projectMeetings, startOfDay(selectedDay), endOfDay(selectedDay));
+    upcoming = day.filter((o) => new Date(o.startsAt) >= now);
+    past = day.filter((o) => new Date(o.startsAt) < now).reverse();
+  } else {
+    upcoming = occurrencesOf(projectMeetings, now, addDays(now, 90));
+    past = occurrencesOf(projectMeetings, subDays(now, 60), now).reverse();
+  }
 
   function openCreate() {
     setEditingMeeting(null);
+    setEditingOccurrence(null);
     setDialogKey((k) => k + 1);
     setDialogOpen(true);
   }
 
-  function openEdit(meeting: Meeting) {
-    setEditingMeeting(meeting);
+  function openEdit(occurrence: Occurrence) {
+    setEditingMeeting(occurrence.meeting);
+    setEditingOccurrence(occurrence.startsAt);
     setDialogKey((k) => k + 1);
     setDialogOpen(true);
   }
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-end">
+      <div className="flex items-center justify-end gap-2">
+        {projectMeetings.length > 0 && (
+          <Button
+            variant="outline"
+            onClick={() => downloadIcs(projectMeetings, `${project.slug}-reunioes`, project.name)}
+            title="Exporta todas as reuniões para Apple Calendar, Outlook e outros"
+          >
+            <Download />
+            Exportar .ics
+          </Button>
+        )}
         <Button onClick={openCreate}>
           <Plus />
           Nova reunião
@@ -63,7 +93,7 @@ export default function ProjectCalendarPage() {
         <MonthCalendar
           month={month}
           onMonthChange={setMonth}
-          meetings={projectMeetings}
+          occurrences={monthOccurrences}
           selectedDay={selectedDay}
           onSelectDay={setSelectedDay}
         />
@@ -84,8 +114,12 @@ export default function ProjectCalendarPage() {
                   Nenhuma reunião marcada.
                 </p>
               ) : (
-                upcoming.map((meeting) => (
-                  <MeetingItem key={meeting.id} meeting={meeting} onClick={() => openEdit(meeting)} />
+                upcoming.map((occurrence) => (
+                  <MeetingItem
+                    key={`${occurrence.meeting.id}-${occurrence.startsAt}`}
+                    occurrence={occurrence}
+                    onClick={() => openEdit(occurrence)}
+                  />
                 ))
               )}
             </CardContent>
@@ -97,8 +131,12 @@ export default function ProjectCalendarPage() {
                 <CardTitle>Reuniões passadas</CardTitle>
               </CardHeader>
               <CardContent className="flex flex-col gap-2">
-                {past.map((meeting) => (
-                  <MeetingItem key={meeting.id} meeting={meeting} onClick={() => openEdit(meeting)} />
+                {past.map((occurrence) => (
+                  <MeetingItem
+                    key={`${occurrence.meeting.id}-${occurrence.startsAt}`}
+                    occurrence={occurrence}
+                    onClick={() => openEdit(occurrence)}
+                  />
                 ))}
               </CardContent>
             </Card>
@@ -112,6 +150,7 @@ export default function ProjectCalendarPage() {
         onOpenChange={setDialogOpen}
         projectId={project.id}
         meeting={editingMeeting}
+        occurrenceStartsAt={editingOccurrence}
         defaultDate={selectedDay}
       />
     </div>

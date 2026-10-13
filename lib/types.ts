@@ -43,6 +43,21 @@ export interface KanbanColumn {
   position: number;
 }
 
+export interface ChecklistItem {
+  id: string;
+  text: string;
+  done: boolean;
+}
+
+export interface CardComment {
+  id: string;
+  projectId: string;
+  cardId: string;
+  userId: string;
+  text: string;
+  createdAt: string;
+}
+
 export interface KanbanCard {
   id: string;
   columnId: string;
@@ -52,6 +67,7 @@ export interface KanbanCard {
   position: number;
   assigneeIds: string[];
   labels: string[];
+  checklist: ChecklistItem[];
   dueDate?: string | null;
   createdBy: string;
   createdAt: string;
@@ -93,6 +109,16 @@ export interface ProjectReference {
   addedAt: string;
 }
 
+export type RecurrenceFreq = "daily" | "weekly" | "monthly";
+
+export interface Recurrence {
+  freq: RecurrenceFreq;
+  // a cada N dias/semanas/meses
+  interval: number;
+  // último dia em que a reunião se repete ("yyyy-MM-dd"); vazio = sem fim
+  until?: string | null;
+}
+
 export interface Meeting {
   id: string;
   projectId: string;
@@ -102,6 +128,10 @@ export interface Meeting {
   location?: string;
   notes?: string;
   attendeeIds: string[];
+  // reunião que se repete; `startsAt` é a primeira ocorrência
+  recurrence?: Recurrence | null;
+  // ocorrências canceladas (o `startsAt` de cada uma)
+  exceptions?: string[];
   createdBy: string;
   createdAt: string;
 }

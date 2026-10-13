@@ -13,6 +13,17 @@ Os dados atualizam **em tempo real** entre dispositivos e pessoas (Firestore).
 **Minhas tarefas** (tudo o que é seu, em todos os projetos, agrupado por prazo); arquivos e roteiros,
 referências visuais, calendário de reuniões e histórico de atividade; **Perfil** (nome, cor e foto).
 
+Também: **checklist e comentários** em cada card; **reuniões recorrentes** (todo dia, toda semana, a cada 2 semanas,
+todo mês, com data final, e cancelamento de uma ocorrência só), com **exportação .ics** (Apple Calendar, Outlook)
+e botão do Google Agenda; **arrastar cards com o dedo** no celular (segure o card por um instante); e **app
+instalável (PWA)**, que também abre sem internet com os últimos dados.
+
+### Instalar no celular
+
+- **Android / Chrome:** menu do avatar → **Instalar app** (ou o aviso "Instalar" do navegador).
+- **iPhone / iPad:** abra no **Safari** → Compartilhar → **Adicionar à Tela de Início**.
+- **Computador (Chrome/Edge):** ícone de instalar na barra de endereço, ou menu do avatar → Instalar app.
+
 ---
 
 ## 1. Configurar o Firebase (uma vez)
@@ -23,6 +34,7 @@ referências visuais, calendário de reuniões e histórico de atividade; **Perf
    - **Google** (escolha um e-mail de suporte do projeto)
 3. **Build → Firestore Database → Criar banco de dados**: modo **produção**, região `southamerica-east1` (São Paulo).
 4. Na aba **Regras** do Firestore, apague o conteúdo e cole o arquivo [`firestore.rules`](./firestore.rules) → **Publicar**.
+   **Sempre que este arquivo mudar (por exemplo, ao receber a função de comentários), publique de novo.**
    *(Alternativa pela linha de comando: `npx firebase-tools deploy --only firestore:rules --project SEU_PROJETO`.)*
 5. **Configurações do projeto (engrenagem) → Geral → Seus aplicativos → `</>` Web**: registre um app e copie
    `apiKey`, `authDomain`, `projectId` e `appId`.
@@ -97,7 +109,7 @@ apagar o projeto no Supabase.
 ```
 users/{uid}                          perfil público (nome, e-mail, cor)
 projects/{projectId}                 projeto; memberIds = quem tem acesso; createdBy = dono
-projects/{projectId}/columns|cards|files|references|meetings|activity/{id}
+projects/{projectId}/columns|cards|comments|files|references|meetings|activity/{id}
 ```
 
 Regras principais (veja [`firestore.rules`](./firestore.rules)):
@@ -105,6 +117,7 @@ Regras principais (veja [`firestore.rules`](./firestore.rules)):
 - Só **membros** leem e editam um projeto e seus itens.
 - Qualquer membro pode adicionar pessoas (pelo e-mail de quem já tem conta); só o **dono** remove outras
   pessoas e **exclui** o projeto; qualquer pessoa pode **sair** de um projeto.
+- Comentários não podem ser editados; só quem escreveu (ou o dono do projeto) os apaga.
 - O histórico de atividade não pode ser editado.
 
 ## 6. Testar com os emuladores (opcional, para quem desenvolve)
@@ -125,5 +138,7 @@ NEXT_PUBLIC_FIREBASE_EMULATOR_HOST=127.0.0.1 npm run dev
 - `lib/store.tsx` — dados em tempo real do Firestore + todas as ações (criar, mover, excluir...)
 - `lib/firebase/` — configuração, autenticação e perfil
 - `firestore.rules`, `firebase.json` — regras de segurança e configuração dos emuladores
+- `app/manifest.ts`, `public/sw.js`, `public/icons/`, `components/pwa.tsx` — app instalável e uso offline
+- `lib/recurrence.ts`, `lib/ics.ts` — reuniões recorrentes e exportação .ics
 - `apphosting.yaml`, `next.config.ts` — hospedagem no App Hosting e repasse da configuração do Firebase ao site
 - `scripts/` — migração do Supabase

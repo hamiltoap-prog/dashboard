@@ -4,7 +4,8 @@ import * as React from "react";
 import {
   DndContext,
   DragOverlay,
-  PointerSensor,
+  MouseSensor,
+  TouchSensor,
   closestCorners,
   useSensor,
   useSensors,
@@ -39,8 +40,11 @@ export function KanbanBoard({
   const [activeCard, setActiveCard] = React.useState<KanbanCardType | null>(null);
   const [selectedCard, setSelectedCard] = React.useState<KanbanCardType | null>(null);
 
+  // Mouse: arrasta depois de mover alguns pixels. Toque: precisa segurar o card por um instante,
+  // senão o gesto é uma rolagem normal da tela (e do quadro, na horizontal).
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 6 } })
+    useSensor(MouseSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 220, tolerance: 8 } })
   );
 
   const members = (projects.find((p) => p.id === projectId)?.memberIds ?? [])

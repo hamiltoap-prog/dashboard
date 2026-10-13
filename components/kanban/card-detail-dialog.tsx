@@ -1,7 +1,9 @@
 "use client";
 
 import * as React from "react";
-import { Trash2 } from "lucide-react";
+import { formatDistanceToNow } from "date-fns";
+import { ptBR } from "date-fns/locale";
+import { Plus, Send, Trash2, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -13,6 +15,13 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { UserAvatar } from "@/components/user-avatar";
 import { dueInputValue, dueIsoFromInput } from "@/lib/dates";
@@ -51,12 +60,54 @@ function CardForm({
   card: KanbanCard;
   onOpenChange: (open: boolean) => void;
 }) {
-  const { updateCard, deleteCard, projects, getProfile } = useStore();
+  const {
+    updateCard,
+    deleteCard,
+    moveCard,
+    setChecklist,
+    addComment,
+    deleteComment,
+    columns,
+    cards,
+    comments,
+    projects,
+    getProfile,
+    currentUser,
+  } = useStore();
+  const project = projects.find((p) => p.id === card.projectId);
+  const cardComments = comments.filter((c) => c.cardId === card.id);
+  const projectColumns = columns
+    .filter((c) => c.projectId === card.projectId)
+    .sort((a, b) => a.position - b.position);
+  const [columnId, setColumnId] = React.useState(card.columnId);
 
-  const members = (projects.find((p) => p.id === card.projectId)?.memberIds ?? [])
+  const members = (project?.memberIds ?? [])
     .map((id) => getProfile(id))
     .filter((p): p is NonNullable<typeof p> => Boolean(p));
   const [assigneeIds, setAssigneeIds] = React.useState(card.assigneeIds);
+  const [checklist, setChecklistState] = React.useState(card.checklist);
+  const [newItem, setNewItem] = React.useState("");
+  const [comment, setComment] = React.useState("");
+
+  // Checklist e comentários são gravados na hora; o resto do card, ao clicar em Salvar.
+  function changeChecklist(next: typeof checklist) {
+    setChecklistState(next);
+    setChecklist(card.id, next);
+  }
+
+  function addItem(e: React.FormEvent) {
+    e.preventDefault();
+    const text = newItem.trim();
+    if (!text) return;
+    changeChecklist([...checklist, { id: crypto.randomUUID(), text, done: false }]);
+    setNewItem("");
+  }
+
+  function sendComment() {
+    if (!comment.trim()) return;
+    addComment(card.id, comment);
+    setComment("");
+  }
 
   function toggleAssignee(id: string) {
     setAssigneeIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
@@ -80,6 +131,10 @@ function CardForm({
       dueDate: dueDate ? dueIsoFromInput(dueDate) : null,
       assigneeIds,
     });
+    if (columnId !== card.columnId) {
+      // vai para o fim da coluna escolhida
+      moveCard(card.id, columnId, cards.filter((c) => c.columnId === columnId).length);
+    }
     onOpenChange(false);
   }
 
@@ -108,6 +163,22 @@ function CardForm({
             value={description}
             onChange={(e) => setDescription(e.target.value)}
           />
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="card-column">Coluna</Label>
+          <Select value={columnId} onValueChange={setColumnId}>
+            <SelectTrigger id="card-column">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {projectColumns.map((c) => (
+                <SelectItem key={c.id} value={c.id}>
+                  {c.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         <div className="flex flex-col gap-1.5">
@@ -155,6 +226,123 @@ function CardForm({
               value={dueDate}
               onChange={(e) => setDueDate(e.target.value)}
             />
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center justify-between">
+            <Label>Checklist</Label>
+            {checklist.length > 0 && (
+              <span className="text-xs text-muted-foreground">
+                {checklist.filter((i) => i.done).length}/{checklist.length}
+              </span>
+            )}
+          </div>
+          {checklist.length > 0 && (
+            <ul className="flex flex-col gap-1">
+              {checklist.map((item) => (
+                <li key={item.id} className="group flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={item.done}
+                    aria-label={item.text}
+                    onChange={() =>
+                      changeChecklist(
+                        checklist.map((i) => (i.id === item.id ? { ...i, done: !i.done } : i))
+                      )
+                    }
+                    className="size-4 shrink-0 accent-primary"
+                  />
+                  <span
+                    className={cn(
+                      "min-w-0 flex-1 break-words text-sm",
+                      item.done && "text-muted-foreground line-through"
+                    )}
+                  >
+                    {item.text}
+                  </span>
+                  <button
+                    type="button"
+                    aria-label={`Remover item ${item.text}`}
+                    onClick={() => changeChecklist(checklist.filter((i) => i.id !== item.id))}
+                    className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                  >
+                    <X className="size-3.5" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          <form onSubmit={addItem} className="flex gap-2">
+            <Input
+              placeholder="Adicionar item"
+              aria-label="Novo item da checklist"
+              value={newItem}
+              onChange={(e) => setNewItem(e.target.value)}
+            />
+            <Button type="submit" variant="secondary" size="icon" aria-label="Adicionar item">
+              <Plus />
+            </Button>
+          </form>
+        </div>
+
+        <div className="flex flex-col gap-3 border-t border-border pt-4">
+          <Label>Comentários {cardComments.length > 0 && `(${cardComments.length})`}</Label>
+          {cardComments.length > 0 && (
+            <ul className="flex flex-col gap-3">
+              {cardComments.map((c) => {
+                const author = getProfile(c.userId);
+                const canDelete = c.userId === currentUser.id || project?.createdBy === currentUser.id;
+                return (
+                  <li key={c.id} className="flex items-start gap-2.5">
+                    {author && <UserAvatar profile={author} className="size-7 shrink-0 text-[10px]" />}
+                    <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <span className="font-medium text-foreground">{author?.name ?? "Alguém"}</span>
+                        <span>
+                          {formatDistanceToNow(new Date(c.createdAt), { addSuffix: true, locale: ptBR })}
+                        </span>
+                        {canDelete && (
+                          <button
+                            type="button"
+                            aria-label="Excluir comentário"
+                            onClick={() => deleteComment(c.id)}
+                            className="ml-auto rounded p-1 hover:bg-accent hover:text-foreground"
+                          >
+                            <Trash2 className="size-3.5" />
+                          </button>
+                        )}
+                      </div>
+                      <p className="whitespace-pre-wrap break-words text-sm">{c.text}</p>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+          <div className="flex items-end gap-2">
+            <Textarea
+              rows={2}
+              placeholder="Escreva um comentário..."
+              aria-label="Novo comentário"
+              value={comment}
+              onChange={(e) => setComment(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  sendComment();
+                }
+              }}
+            />
+            <Button
+              type="button"
+              size="icon"
+              aria-label="Enviar comentário"
+              disabled={!comment.trim()}
+              onClick={sendComment}
+            >
+              <Send />
+            </Button>
           </div>
         </div>
       </div>

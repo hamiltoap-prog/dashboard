@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { format } from "date-fns";
-import { Trash2 } from "lucide-react";
+import { Repeat, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -15,12 +15,46 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useStore } from "@/lib/store";
-import type { Meeting } from "@/lib/types";
+import type { Meeting, Recurrence } from "@/lib/types";
 
 function combine(date: string, time: string) {
   return new Date(`${date}T${time || "00:00"}:00`).toISOString();
+}
+
+type RepeatKey = "none" | "daily" | "weekly" | "biweekly" | "monthly";
+
+const REPEAT_LABEL: Record<RepeatKey, string> = {
+  none: "Não se repete",
+  daily: "Todo dia",
+  weekly: "Toda semana",
+  biweekly: "A cada 2 semanas",
+  monthly: "Todo mês",
+};
+
+function repeatKeyOf(recurrence?: Recurrence | null): RepeatKey {
+  if (!recurrence) return "none";
+  if (recurrence.freq === "weekly") return recurrence.interval === 2 ? "biweekly" : "weekly";
+  return recurrence.freq;
+}
+
+function recurrenceOf(key: RepeatKey, until: string): Recurrence | null {
+  if (key === "none") return null;
+  const base =
+    key === "daily"
+      ? { freq: "daily" as const, interval: 1 }
+      : key === "monthly"
+        ? { freq: "monthly" as const, interval: 1 }
+        : { freq: "weekly" as const, interval: key === "biweekly" ? 2 : 1 };
+  return { ...base, until: until || null };
 }
 
 interface MeetingDialogProps {
@@ -28,10 +62,19 @@ interface MeetingDialogProps {
   onOpenChange: (open: boolean) => void;
   projectId: string;
   meeting?: Meeting | null;
+  // começo da ocorrência que foi clicada (para cancelar só ela)
+  occurrenceStartsAt?: string | null;
   defaultDate?: Date | null;
 }
 
-export function MeetingDialog({ open, onOpenChange, projectId, meeting, defaultDate }: MeetingDialogProps) {
+export function MeetingDialog({
+  open,
+  onOpenChange,
+  projectId,
+  meeting,
+  occurrenceStartsAt,
+  defaultDate,
+}: MeetingDialogProps) {
   // `meeting`/`defaultDate` só importam no instante em que o diálogo abre —
   // o componente pai troca a `key` a cada abertura para reiniciar o formulário.
   return (
@@ -40,6 +83,7 @@ export function MeetingDialog({ open, onOpenChange, projectId, meeting, defaultD
         <MeetingForm
           projectId={projectId}
           meeting={meeting}
+          occurrenceStartsAt={occurrenceStartsAt}
           defaultDate={defaultDate}
           onOpenChange={onOpenChange}
         />
@@ -51,10 +95,11 @@ export function MeetingDialog({ open, onOpenChange, projectId, meeting, defaultD
 function MeetingForm({
   projectId,
   meeting,
+  occurrenceStartsAt,
   defaultDate,
   onOpenChange,
 }: Omit<MeetingDialogProps, "open">) {
-  const { addMeeting, updateMeeting, deleteMeeting } = useStore();
+  const { addMeeting, updateMeeting, deleteMeeting, skipOccurrence } = useStore();
   const isEditing = Boolean(meeting);
 
   const [title, setTitle] = React.useState(meeting?.title ?? "");
@@ -69,6 +114,10 @@ function MeetingForm({
   );
   const [location, setLocation] = React.useState(meeting?.location ?? "");
   const [notes, setNotes] = React.useState(meeting?.notes ?? "");
+  const [repeat, setRepeat] = React.useState<RepeatKey>(repeatKeyOf(meeting?.recurrence));
+  const [until, setUntil] = React.useState(meeting?.recurrence?.until ?? "");
+  const [confirmingDelete, setConfirmingDelete] = React.useState(false);
+  const isSeries = Boolean(meeting?.recurrence);
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -78,10 +127,25 @@ function MeetingForm({
     const endsAt = endTime ? combine(date, endTime) : null;
 
     if (meeting) {
-      updateMeeting(meeting.id, { title, startsAt, endsAt, location, notes });
+      updateMeeting(meeting.id, {
+        title,
+        startsAt,
+        endsAt,
+        location,
+        notes,
+        recurrence: recurrenceOf(repeat, until),
+      });
       toast.success("Reunião atualizada");
     } else {
-      addMeeting({ projectId, title, startsAt, endsAt, location, notes });
+      addMeeting({
+        projectId,
+        title,
+        startsAt,
+        endsAt,
+        location,
+        notes,
+        recurrence: recurrenceOf(repeat, until),
+      });
       toast.success("Reunião marcada");
     }
     onOpenChange(false);
@@ -89,7 +153,19 @@ function MeetingForm({
 
   function handleDelete() {
     if (!meeting) return;
+    // Em reunião recorrente, primeiro pergunta se é só esta ou toda a série.
+    if (meeting.recurrence && !confirmingDelete) {
+      setConfirmingDelete(true);
+      return;
+    }
     deleteMeeting(meeting.id);
+    onOpenChange(false);
+  }
+
+  function handleSkipOne() {
+    if (!meeting || !occurrenceStartsAt) return;
+    skipOccurrence(meeting.id, occurrenceStartsAt);
+    toast.success("Reunião cancelada neste dia");
     onOpenChange(false);
   }
 
@@ -112,7 +188,7 @@ function MeetingForm({
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="meeting-date">Data</Label>
+          <Label htmlFor="meeting-date">{isSeries ? "Data da primeira reunião" : "Data"}</Label>
           <Input
             id="meeting-date"
             type="date"
@@ -143,6 +219,42 @@ function MeetingForm({
           </div>
         </div>
 
+        <div className="grid grid-cols-2 gap-3">
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="meeting-repeat">Repetição</Label>
+            <Select value={repeat} onValueChange={(v) => setRepeat(v as RepeatKey)}>
+              <SelectTrigger id="meeting-repeat">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {Object.entries(REPEAT_LABEL).map(([key, label]) => (
+                  <SelectItem key={key} value={key}>
+                    {label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          {repeat !== "none" && (
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="meeting-until">Repetir até</Label>
+              <Input
+                id="meeting-until"
+                type="date"
+                min={date}
+                value={until}
+                onChange={(e) => setUntil(e.target.value)}
+              />
+            </div>
+          )}
+        </div>
+        {isSeries && (
+          <p className="-mt-2 flex items-start gap-1.5 text-xs text-muted-foreground">
+            <Repeat className="mt-0.5 size-3 shrink-0" />
+            Alterações valem para todas as reuniões desta série.
+          </p>
+        )}
+
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="meeting-location">Local</Label>
           <Input
@@ -164,22 +276,37 @@ function MeetingForm({
           />
         </div>
 
-        <DialogFooter className="mt-2 sm:justify-between">
-          {isEditing ? (
-            <Button
-              type="button"
-              variant="ghost"
-              className="text-destructive hover:bg-destructive/10"
-              onClick={handleDelete}
-            >
-              <Trash2 />
-              Excluir
+        {confirmingDelete ? (
+          <DialogFooter className="mt-2 flex-col gap-2 sm:flex-col sm:items-stretch">
+            <p className="text-sm text-muted-foreground">Esta reunião se repete. O que excluir?</p>
+            <Button type="button" variant="outline" onClick={handleSkipOne} disabled={!occurrenceStartsAt}>
+              Só esta reunião
             </Button>
-          ) : (
-            <span />
-          )}
-          <Button type="submit">{isEditing ? "Salvar" : "Marcar reunião"}</Button>
-        </DialogFooter>
+            <Button type="button" variant="destructive" onClick={handleDelete}>
+              Todas as reuniões da série
+            </Button>
+            <Button type="button" variant="ghost" onClick={() => setConfirmingDelete(false)}>
+              Voltar
+            </Button>
+          </DialogFooter>
+        ) : (
+          <DialogFooter className="mt-2 sm:justify-between">
+            {isEditing ? (
+              <Button
+                type="button"
+                variant="ghost"
+                className="text-destructive hover:bg-destructive/10"
+                onClick={handleDelete}
+              >
+                <Trash2 />
+                Excluir
+              </Button>
+            ) : (
+              <span />
+            )}
+            <Button type="submit">{isEditing ? "Salvar" : "Marcar reunião"}</Button>
+          </DialogFooter>
+        )}
       </form>
     </>
   );

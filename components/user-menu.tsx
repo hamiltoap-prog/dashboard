@@ -11,6 +11,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { InstallAppMenuItem } from "@/components/pwa";
 import { UserAvatar } from "@/components/user-avatar";
 import { signOutUser } from "@/lib/firebase/auth-actions";
 import type { Profile } from "@/lib/types";
@@ -42,6 +43,7 @@ export function UserMenu({ user }: { user: Profile }) {
           <KeyRound />
           Alterar senha
         </DropdownMenuItem>
+        <InstallAppMenuItem />
         <DropdownMenuSeparator />
         <DropdownMenuItem variant="destructive" onSelect={handleSignOut}>
           <LogOut />

@@ -31,6 +31,8 @@ import type {
   ActivityAction,
   ActivityEntityType,
   ActivityEntry,
+  CardComment,
+  ChecklistItem,
   KanbanCard,
   KanbanColumn,
   Meeting,
@@ -44,10 +46,18 @@ import type {
 // Modelo no Firestore:
 //   users/{uid}                      -> Profile
 //   projects/{projectId}             -> Project (memberIds = quem tem acesso)
-//   projects/{projectId}/{sub}/{id}  -> columns | cards | files | references | meetings | activity
+//   projects/{projectId}/{sub}/{id}  -> columns | cards | comments | files | references | meetings | activity
 // O `id` de cada item é o id do documento (não é gravado dentro dele).
 
-const SUBCOLLECTIONS = ["columns", "cards", "files", "references", "meetings", "activity"] as const;
+const SUBCOLLECTIONS = [
+  "columns",
+  "cards",
+  "comments",
+  "files",
+  "references",
+  "meetings",
+  "activity",
+] as const;
 type Sub = (typeof SUBCOLLECTIONS)[number];
 
 const DEFAULT_PHASES = ["A iniciar", "Em Produção", "Concluído", "Recorrente"];
@@ -57,6 +67,7 @@ const BATCH_LIMIT = 400;
 interface ProjectData {
   columns: KanbanColumn[];
   cards: KanbanCard[];
+  comments: CardComment[];
   files: ProjectFile[];
   references: ProjectReference[];
   meetings: Meeting[];
@@ -66,6 +77,7 @@ interface ProjectData {
 const EMPTY_PROJECT_DATA: ProjectData = {
   columns: [],
   cards: [],
+  comments: [],
   files: [],
   references: [],
   meetings: [],
@@ -119,10 +131,18 @@ function byNewest(a: { createdAt?: string; addedAt?: string }, b: { createdAt?: 
 const mappers: { [K in Sub]: (id: string, data: DocumentData) => ProjectData[K][number] } = {
   columns: (id, data) => ({ id, ...data }) as KanbanColumn,
   cards: (id, data) =>
-    ({ id, ...data, assigneeIds: data.assigneeIds ?? [], labels: data.labels ?? [] }) as KanbanCard,
+    ({
+      id,
+      ...data,
+      assigneeIds: data.assigneeIds ?? [],
+      labels: data.labels ?? [],
+      checklist: data.checklist ?? [],
+    }) as KanbanCard,
+  comments: (id, data) => ({ id, ...data }) as CardComment,
   files: (id, data) => ({ id, ...data }) as ProjectFile,
   references: (id, data) => ({ id, ...data, tags: data.tags ?? [] }) as ProjectReference,
-  meetings: (id, data) => ({ id, ...data, attendeeIds: data.attendeeIds ?? [] }) as Meeting,
+  meetings: (id, data) =>
+    ({ id, ...data, attendeeIds: data.attendeeIds ?? [], exceptions: data.exceptions ?? [] }) as Meeting,
   activity: (id, data) => ({ id, ...data }) as ActivityEntry,
 };
 
@@ -131,6 +151,7 @@ interface StoreData {
   projects: Project[];
   columns: KanbanColumn[];
   cards: KanbanCard[];
+  comments: CardComment[];
   files: ProjectFile[];
   references: ProjectReference[];
   meetings: Meeting[];
@@ -170,6 +191,10 @@ interface StoreContextValue extends StoreData {
   updateProfile: (patch: Partial<Pick<Profile, "name" | "colorHex" | "avatarUrl">>) => void;
   updateCard: (id: string, patch: Partial<KanbanCard>) => void;
   deleteCard: (id: string) => void;
+  // Grava a checklist na hora (sem registrar atividade a cada item marcado).
+  setChecklist: (cardId: string, checklist: ChecklistItem[]) => void;
+  addComment: (cardId: string, text: string) => void;
+  deleteComment: (id: string) => void;
   addFile: (input: {
     projectId: string;
     name: string;
@@ -195,9 +220,12 @@ interface StoreContextValue extends StoreData {
     endsAt?: string | null;
     location?: string;
     notes?: string;
+    recurrence?: Meeting["recurrence"];
   }) => Meeting;
   updateMeeting: (id: string, patch: Partial<Meeting>) => void;
   deleteMeeting: (id: string) => void;
+  // Cancela só uma ocorrência de uma reunião recorrente.
+  skipOccurrence: (id: string, startsAt: string) => void;
 }
 
 const StoreContext = React.createContext<StoreContextValue | null>(null);
@@ -322,6 +350,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       projects,
       columns: parts.flatMap((d) => d.columns).sort((a, b) => a.position - b.position),
       cards: parts.flatMap((d) => d.cards).sort((a, b) => a.position - b.position),
+      comments: parts.flatMap((d) => d.comments).sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
       files: parts.flatMap((d) => d.files).sort(byNewest),
       references: parts.flatMap((d) => d.references).sort(byNewest),
       meetings: parts.flatMap((d) => d.meetings).sort((a, b) => a.startsAt.localeCompare(b.startsAt)),
@@ -507,6 +536,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           position: data.cards.filter((c) => c.columnId === columnId).length,
           assigneeIds: [],
           labels: labels ?? [],
+          checklist: [],
           dueDate: dueDate ?? null,
           createdBy: uid,
           createdAt: now,
@@ -648,6 +678,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           "labels",
           "dueDate",
           "assigneeIds",
+          "checklist",
           "columnId",
           "position",
         ]);
@@ -663,7 +694,51 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         deleteDoc(itemDoc(card.projectId, "cards", id)).catch(
           failure("Não foi possível excluir o card.")
         );
+        // Apaga também os comentários (só é permitido apagar os próprios; o dono apaga todos).
+        const project = data.projects.find((p) => p.id === card.projectId);
+        const removable = data.comments.filter(
+          (c) => c.cardId === id && (c.userId === uid || project?.createdBy === uid)
+        );
+        if (removable.length > 0) {
+          const batch = writeBatch(db);
+          removable.forEach((c) => batch.delete(itemDoc(card.projectId, "comments", c.id)));
+          batch.commit().catch(() => {});
+        }
         logActivity(card.projectId, "deleted", "card", card.title);
+      },
+
+      setChecklist: (cardId, checklist) => {
+        const card = data.cards.find((c) => c.id === cardId);
+        if (!card) return;
+        updateDoc(itemDoc(card.projectId, "cards", cardId), { checklist, updatedAt: nowIso() }).catch(
+          failure("Não foi possível salvar a checklist.")
+        );
+      },
+
+      addComment: (cardId, text) => {
+        const card = data.cards.find((c) => c.id === cardId);
+        const trimmed = text.trim();
+        if (!card || !trimmed) return;
+        const comment: CardComment = {
+          id: newId(),
+          projectId: card.projectId,
+          cardId,
+          userId: uid,
+          text: trimmed,
+          createdAt: nowIso(),
+        };
+        setDoc(itemDoc(card.projectId, "comments", comment.id), withoutId(comment)).catch(
+          failure("Não foi possível salvar o comentário.")
+        );
+        logActivity(card.projectId, "commented", "card", card.title, trimmed.slice(0, 140));
+      },
+
+      deleteComment: (id) => {
+        const comment = data.comments.find((c) => c.id === id);
+        if (!comment) return;
+        deleteDoc(itemDoc(comment.projectId, "comments", id)).catch(
+          failure("Não foi possível excluir o comentário.")
+        );
       },
 
       addFile: ({ projectId, name, url, type, notes }) => {
@@ -722,7 +797,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         logActivity(reference.projectId, "deleted", "reference", reference.title || reference.url);
       },
 
-      addMeeting: ({ projectId, title, startsAt, endsAt, location, notes }) => {
+      addMeeting: ({ projectId, title, startsAt, endsAt, location, notes, recurrence }) => {
         const meeting: Meeting = {
           id: newId(),
           projectId,
@@ -732,6 +807,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           location,
           notes,
           attendeeIds: [uid],
+          recurrence: recurrence ?? null,
+          exceptions: [],
           createdBy: uid,
           createdAt: nowIso(),
         };
@@ -745,11 +822,29 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       updateMeeting: (id, patch) => {
         const meeting = data.meetings.find((m) => m.id === id);
         if (!meeting) return;
-        const fields = pick(patch, ["title", "startsAt", "endsAt", "location", "notes", "attendeeIds"]);
+        const fields = pick(patch, [
+          "title",
+          "startsAt",
+          "endsAt",
+          "location",
+          "notes",
+          "attendeeIds",
+          "recurrence",
+          "exceptions",
+        ]);
         updateDoc(itemDoc(meeting.projectId, "meetings", id), fields).catch(
           failure("Não foi possível salvar as alterações da reunião.")
         );
         logActivity(meeting.projectId, "updated", "meeting", meeting.title);
+      },
+
+      skipOccurrence: (id, startsAt) => {
+        const meeting = data.meetings.find((m) => m.id === id);
+        if (!meeting) return;
+        updateDoc(itemDoc(meeting.projectId, "meetings", id), {
+          exceptions: arrayUnion(startsAt),
+        }).catch(failure("Não foi possível cancelar a reunião."));
+        logActivity(meeting.projectId, "deleted", "meeting", meeting.title, "cancelou uma ocorrência");
       },
 
       deleteMeeting: (id) => {

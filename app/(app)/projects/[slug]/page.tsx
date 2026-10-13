@@ -7,6 +7,7 @@ import { Calendar, Columns3, FileText, Images } from "lucide-react";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ActivityFeed } from "@/components/activity-feed";
+import { nextOccurrences } from "@/lib/recurrence";
 import { useProject, useStore } from "@/lib/store";
 
 export default function ProjectOverviewPage() {
@@ -18,10 +19,11 @@ export default function ProjectOverviewPage() {
   const projectCards = cards.filter((c) => c.projectId === project.id);
   const projectFiles = files.filter((f) => f.projectId === project.id);
   const projectReferences = references.filter((r) => r.projectId === project.id);
-  const upcomingMeetings = meetings
-    .filter((m) => m.projectId === project.id && new Date(m.startsAt) >= new Date())
-    .sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime())
-    .slice(0, 3);
+  const upcomingMeetings = nextOccurrences(
+    meetings.filter((m) => m.projectId === project.id),
+    new Date(),
+    3
+  );
   const recentActivity = activity.filter((a) => a.projectId === project.id).slice(0, 6);
 
   const stats = [
@@ -72,11 +74,11 @@ export default function ProjectOverviewPage() {
               </p>
             ) : (
               <ul className="flex flex-col gap-4">
-                {upcomingMeetings.map((meeting) => (
-                  <li key={meeting.id} className="flex flex-col gap-0.5">
+                {upcomingMeetings.map(({ meeting, startsAt }) => (
+                  <li key={`${meeting.id}-${startsAt}`} className="flex flex-col gap-0.5">
                     <span className="text-sm font-medium">{meeting.title}</span>
                     <span className="text-xs text-muted-foreground">
-                      {format(new Date(meeting.startsAt), "EEEE, d 'de' MMMM 'às' HH:mm", {
+                      {format(new Date(startsAt), "EEEE, d 'de' MMMM 'às' HH:mm", {
                         locale: ptBR,
                       })}
                     </span>

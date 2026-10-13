@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/components/providers/theme-provider";
+import { ServiceWorkerRegister } from "@/components/pwa";
 import { Toaster } from "@/components/ui/sonner";
 import { AuthProvider } from "@/lib/firebase/auth";
 
@@ -13,6 +14,9 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: "Palco — Dashboard de Projetos",
   description: "Gestão de projetos de teatro: roteiros, referências, fases e reuniões em um só lugar.",
+  applicationName: "Palco",
+  appleWebApp: { capable: true, title: "Palco", statusBarStyle: "default" },
+  icons: { apple: "/icons/apple-touch-icon.png" },
 };
 
 export const viewport: Viewport = {
@@ -39,6 +43,7 @@ export default function RootLayout({
           disableTransitionOnChange
         >
           <AuthProvider>{children}</AuthProvider>
+          <ServiceWorkerRegister />
           <Toaster />
         </ThemeProvider>
       </body>
