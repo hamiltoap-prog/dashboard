@@ -1,0 +1,29 @@
+# Configuração do Firebase App Hosting (hospedagem do site).
+# Docs: https://firebase.google.com/docs/app-hosting/configure
+
+runConfig:
+  cpu: 1
+  memoryMiB: 512
+  # Zero instâncias paradas: quando ninguém está usando o site, não há custo de computação.
+  minInstances: 0
+  # Teto de instâncias para limitar gastos inesperados.
+  maxInstances: 2
+  concurrency: 80
+
+# Nenhuma variável é necessária aqui: o App Hosting fornece FIREBASE_WEBAPP_CONFIG (desde que o
+# app Web esteja vinculado ao backend) e o next.config.ts a repassa ao site.
+# Só se isso falhar, descomente e preencha com os dados do app Web (não são segredos):
+#
+# env:
+#   - variable: NEXT_PUBLIC_FIREBASE_API_KEY
+#     value: SUA_API_KEY
+#     availability: [BUILD, RUNTIME]
+#   - variable: NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
+#     value: SEU-PROJETO.firebaseapp.com
+#     availability: [BUILD, RUNTIME]
+#   - variable: NEXT_PUBLIC_FIREBASE_PROJECT_ID
+#     value: SEU-PROJETO
+#     availability: [BUILD, RUNTIME]
+#   - variable: NEXT_PUBLIC_FIREBASE_APP_ID
+#     value: 1:000000000000:web:0000000000000000
+#     availability: [BUILD, RUNTIME]

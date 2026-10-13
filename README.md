@@ -4,7 +4,7 @@ Gestão de projetos de teatro: roteiros e documentos, referências visuais (YouT
 quadro Kanban por fases, calendário de reuniões (com Google Agenda e Google Maps) e histórico de
 quem fez o quê. Visual inspirado no design da Apple, claro/escuro, pensado primeiro para celular.
 
-**Stack:** Next.js (App Router) · TypeScript · Tailwind v4 · Firebase (Authentication + Firestore) · hospedagem na Vercel.
+**Stack:** Next.js (App Router) · TypeScript · Tailwind v4 · Firebase (Authentication + Firestore) · hospedagem no Firebase App Hosting.
 
 Os dados atualizam **em tempo real** entre dispositivos e pessoas (Firestore).
 
@@ -21,29 +21,42 @@ Os dados atualizam **em tempo real** entre dispositivos e pessoas (Firestore).
    *(Alternativa pela linha de comando: `npx firebase-tools deploy --only firestore:rules --project SEU_PROJETO`.)*
 5. **Configurações do projeto (engrenagem) → Geral → Seus aplicativos → `</>` Web**: registre um app e copie
    `apiKey`, `authDomain`, `projectId` e `appId`.
-6. **Authentication → Configurações → Domínios autorizados**: adicione o endereço do site na Vercel
-   (ex.: `palco.vercel.app`) e o seu domínio próprio, se tiver. Sem isso o login com Google e o link de
-   recuperação de senha não funcionam.
+6. **Authentication → Configurações → Domínios autorizados**: depois de publicar o site (seção 2), adicione o
+   endereço dele (algo como `palco--SEU-PROJETO.REGIAO.hosted.app`) e o seu domínio próprio, se tiver. Os
+   endereços do próprio Firebase (`*.web.app`, `*.firebaseapp.com`) já vêm autorizados. Sem isso o login com
+   Google e o link de recuperação de senha não funcionam no site publicado.
 7. *(Opcional)* **Authentication → Modelos → Redefinição de senha** (lápis): troque o idioma do e-mail para **Português (Brasil)**.
 
-O plano gratuito (Spark) é suficiente para uma equipe pequena; não é preciso cadastrar cartão.
+O login e o banco ficam no plano gratuito (**Spark**), sem cartão. A hospedagem do site (seção 2) exige o plano **Blaze**.
 
-## 2. Variáveis de ambiente
+## 2. Publicar o site (Firebase App Hosting)
 
-Copie `.env.local.example` para `.env.local` (uso local) e cadastre **as mesmas quatro variáveis** na Vercel
-(**Project → Settings → Environment Variables**), depois faça um novo deploy:
+O site roda no **Firebase App Hosting**, que publica sozinho a cada push no GitHub. Ele exige o plano **Blaze**
+(pagamento por uso, com cartão): só é cobrado o que passar das cotas gratuitas, e o `apphosting.yaml` deste
+repositório limita o site a no máximo 2 instâncias e a zero instâncias paradas. Crie um **alerta de orçamento**
+em *Google Cloud Console → Faturamento → Orçamentos e alertas* para ser avisado antes de gastar.
 
-```
-NEXT_PUBLIC_FIREBASE_API_KEY=
-NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=
-NEXT_PUBLIC_FIREBASE_PROJECT_ID=
-NEXT_PUBLIC_FIREBASE_APP_ID=
-```
+1. Console do Firebase → **Configurações do projeto → Uso e faturamento → Modificar plano → Blaze**.
+2. **Build → App Hosting → Começar**:
+   - região: **`southamerica-east1`** (São Paulo), se estiver disponível;
+   - **conecte o repositório do GitHub** (`hamiltoap-prog/dashboard`) e escolha a **branch ao vivo** (a que será
+     publicada a cada push);
+   - diretório raiz: `/` · rollouts automáticos: **ativados**;
+   - dê um nome ao backend (ex.: `palco`) e **associe o app Web** criado no passo 5 da seção 1. É isso que faz a
+     configuração do Firebase chegar sozinha ao site (`FIREBASE_WEBAPP_CONFIG`), sem copiar chaves.
+3. Aguarde o primeiro *rollout* (alguns minutos). O endereço aparece no painel do App Hosting.
+4. Volte ao passo 6 da seção 1 e autorize esse endereço.
 
-Essas chaves **não são segredos** (vão para o navegador de qualquer forma); quem protege os dados são as regras do
-Firestore. Sem as variáveis, o app mostra um aviso de "Firebase não configurado".
+O arquivo [`apphosting.yaml`](./apphosting.yaml) define os limites de recursos. Se o site abrir com o aviso
+"Firebase não configurado", abra o arquivo e siga o trecho comentado para informar as chaves manualmente.
+
+> **Alternativa (Vercel):** também funciona. Cadastre as quatro variáveis `NEXT_PUBLIC_FIREBASE_API_KEY`,
+> `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN`, `NEXT_PUBLIC_FIREBASE_PROJECT_ID` e `NEXT_PUBLIC_FIREBASE_APP_ID`
+> (valores do passo 5) em *Project → Settings → Environment Variables* e autorize o endereço da Vercel no Firebase.
 
 ## 3. Rodar localmente
+
+Copie `.env.local.example` para `.env.local` e preencha as quatro variáveis com os dados do app Web.
 
 ```bash
 npm install
@@ -107,4 +120,5 @@ NEXT_PUBLIC_FIREBASE_EMULATOR_HOST=127.0.0.1 npm run dev
 - `lib/store.tsx` — dados em tempo real do Firestore + todas as ações (criar, mover, excluir...)
 - `lib/firebase/` — configuração, autenticação e perfil
 - `firestore.rules`, `firebase.json` — regras de segurança e configuração dos emuladores
+- `apphosting.yaml`, `next.config.ts` — hospedagem no App Hosting e repasse da configuração do Firebase ao site
 - `scripts/` — migração do Supabase

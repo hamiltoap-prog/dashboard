@@ -67,7 +67,7 @@ export function SetupNotice() {
           Defina as variáveis <code>NEXT_PUBLIC_FIREBASE_API_KEY</code>,{" "}
           <code>NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN</code>,{" "}
           <code>NEXT_PUBLIC_FIREBASE_PROJECT_ID</code> e <code>NEXT_PUBLIC_FIREBASE_APP_ID</code>{" "}
-          (no <code>.env.local</code> ou na Vercel) e publique de novo. O passo a passo está no
+          (no <code>.env.local</code>), ou vincule o app Web ao backend do App Hosting, e publique de novo. O passo a passo está no
           README.
         </p>
       </div>
