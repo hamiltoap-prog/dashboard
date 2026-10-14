@@ -29,13 +29,13 @@ runConfig:
 #     availability: [BUILD, RUNTIME]
 
 # ---------------------------------------------------------------------------------------------
-# Notificações push (opcional). Passo a passo no README, seção "Notificações push".
-# Só descomente DEPOIS de criar o segredo (senão o build falha por não achar o segredo):
-#
-# env:   (se já existir um bloco "env:" acima, junte as linhas abaixo nele)
-#   - variable: NEXT_PUBLIC_VAPID_PUBLIC_KEY
-#     value: COLE_AQUI_A_CHAVE_PUBLICA      # não é segredo
-#     availability: [BUILD, RUNTIME]
-#   - variable: VAPID_PRIVATE_KEY
-#     secret: vapid-private-key              # guardada no Secret Manager, nunca no GitHub
-#     availability: [RUNTIME]
+# Notificações push (veja o README, seção "Notificações push").
+# A chave pública não é segredo. A privada fica no Secret Manager (segredo "vapid-private-key",
+# criado com `firebase apphosting:secrets:set`) e nunca no GitHub.
+env:
+  - variable: NEXT_PUBLIC_VAPID_PUBLIC_KEY
+    value: BGVZBqCF4sXY65DbQFtdkyDdOodFSd7CBEtau-411tTs455455JuNsHrfLuIoVwTFMYJkwiWOVceYyGcElNoXHE
+    availability: [BUILD, RUNTIME]
+  - variable: VAPID_PRIVATE_KEY
+    secret: vapid-private-key
+    availability: [RUNTIME]
