@@ -13,6 +13,9 @@ import { useStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import type { KanbanCard as KanbanCardType } from "@/lib/types";
 
+// Num card estreito cabem poucos avatares; o resto vira "+N".
+const MAX_AVATARS = 3;
+
 export function KanbanCard({
   card,
   onClick,
@@ -61,14 +64,14 @@ export function KanbanCard({
       {card.labels.length > 0 && (
         <div className="flex flex-wrap gap-1">
           {card.labels.map((label) => (
-            <Badge key={label} variant="default" className="px-2 py-0 text-[11px]">
+            <Badge key={label} variant="default" className="max-w-full truncate px-2 py-0 text-[11px]">
               {label}
             </Badge>
           ))}
         </div>
       )}
 
-      <p className="text-sm font-medium leading-snug">{card.title}</p>
+      <p className="text-sm font-medium leading-snug wrap-anywhere">{card.title}</p>
 
       {hasFooter && (
         <div className="flex items-center justify-between gap-2 pt-0.5">
@@ -100,10 +103,18 @@ export function KanbanCard({
               </span>
             )}
           </div>
-          <div className="flex -space-x-1.5">
-            {assignees.map((a) => (
+          <div className="flex shrink-0 items-center -space-x-1.5">
+            {assignees.slice(0, MAX_AVATARS).map((a) => (
               <UserAvatar key={a.id} profile={a} className="size-5 text-[9px]" />
             ))}
+            {assignees.length > MAX_AVATARS && (
+              <span
+                className="relative flex size-5 items-center justify-center rounded-full bg-secondary text-[9px] font-semibold text-muted-foreground ring-2 ring-card"
+                title={assignees.slice(MAX_AVATARS).map((a) => a.name).join(", ")}
+              >
+                +{assignees.length - MAX_AVATARS}
+              </span>
+            )}
           </div>
         </div>
       )}

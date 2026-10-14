@@ -55,6 +55,7 @@ export function ProjectActionsMenu({
             type="button"
             variant="ghost"
             size="icon"
+            aria-label="Ações do projeto"
             className={cn("bg-black/40 text-white hover:bg-black/55 hover:text-white", className)}
             onClick={(e) => e.stopPropagation()}
           >

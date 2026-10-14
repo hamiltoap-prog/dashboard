@@ -43,10 +43,10 @@ export function ActivityFeed({
       {entries.map((entry) => {
         const profile = getProfile(entry.userId);
         return (
-          <li key={entry.id} className="flex items-start gap-3">
+          <li key={entry.id} className="flex min-w-0 items-start gap-3">
             {profile && <UserAvatar profile={profile} className="size-8 shrink-0" />}
-            <div className="flex min-w-0 flex-col gap-0.5">
-              <p className="text-sm leading-snug">
+            <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+              <p className="text-sm leading-snug wrap-anywhere">
                 <span className="font-medium">{profile?.name ?? "Alguém"}</span>{" "}
                 <span className="text-muted-foreground">
                   {ACTION_VERB[entry.action]} {ENTITY_LABEL[entry.entityType]}
@@ -54,7 +54,7 @@ export function ActivityFeed({
                 <span className="font-medium">{entry.entityLabel}</span>
               </p>
               {entry.detail && (
-                <p className="text-sm text-muted-foreground">{entry.detail}</p>
+                <p className="line-clamp-3 text-sm text-muted-foreground wrap-anywhere">{entry.detail}</p>
               )}
               <span className="text-xs text-muted-foreground">
                 {formatDistanceToNow(new Date(entry.createdAt), {

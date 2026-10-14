@@ -36,7 +36,7 @@ export function ReferenceViewerDialog({
 
   return (
     <Dialog open={Boolean(reference)} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-xl p-0 overflow-hidden">
+      <DialogContent className="max-w-xl gap-0 overflow-hidden p-0 sm:p-0">
         <DialogTitle className="sr-only">{reference.title}</DialogTitle>
 
         <div className="relative aspect-video w-full bg-black">
@@ -57,7 +57,7 @@ export function ReferenceViewerDialog({
               className="size-full object-contain"
             />
           ) : (
-            <div className="flex size-full flex-col items-center justify-center gap-2 text-white/70">
+            <div className="flex size-full flex-col items-center justify-center gap-2 px-6 text-center text-white/70">
               <ImageOff className="size-8" />
               <p className="text-sm">Sem preview — abra o link original para ver.</p>
             </div>
@@ -66,8 +66,8 @@ export function ReferenceViewerDialog({
 
         <div className="flex flex-col gap-3 p-5 pt-4">
           <div className="flex items-start justify-between gap-3">
-            <div className="flex flex-col gap-1">
-              <p className="font-medium leading-snug">{reference.title}</p>
+            <div className="flex min-w-0 flex-col gap-1">
+              <p className="font-medium leading-snug wrap-anywhere">{reference.title}</p>
               <p className="text-xs text-muted-foreground">
                 Adicionado por {addedBy?.name ?? "alguém"}
                 {" · "}
@@ -77,7 +77,7 @@ export function ReferenceViewerDialog({
                 })}
               </p>
             </div>
-            <Badge variant="secondary">{reference.sourceLabel}</Badge>
+            <Badge variant="secondary" className="shrink-0">{reference.sourceLabel}</Badge>
           </div>
 
           {reference.tags.length > 0 && (

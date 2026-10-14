@@ -134,6 +134,20 @@
     @apply bg-background text-foreground;
     font-feature-settings: "cv11", "ss01";
   }
+  /* iPhone/iPad: campos de data e hora têm largura mínima própria, ignoram width:100% e vazam da
+     coluna. Sem a aparência nativa eles se comportam como os outros campos. */
+  input[type="date"],
+  input[type="time"],
+  input[type="datetime-local"],
+  input[type="month"] {
+    -webkit-appearance: none;
+    appearance: none;
+    min-width: 0;
+  }
+  input::-webkit-date-and-time-value {
+    text-align: left;
+    min-height: 1.5em;
+  }
 }
 
 @layer utilities {

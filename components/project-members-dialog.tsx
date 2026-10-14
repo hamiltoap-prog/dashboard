@@ -83,10 +83,12 @@ export function ProjectMembersDialog({ project }: { project: Project }) {
                   variant="ghost"
                   size="sm"
                   className="shrink-0 text-destructive hover:bg-destructive/10"
+                  aria-label={`Remover ${member.name} do projeto`}
+                  title="Remover do projeto"
                   onClick={() => removeMember(project.id, member.id)}
                 >
                   <UserMinus />
-                  Remover
+                  <span className="hidden sm:inline">Remover</span>
                 </Button>
               )}
               {!isOwner && member.id === currentUser.id && (
@@ -95,6 +97,8 @@ export function ProjectMembersDialog({ project }: { project: Project }) {
                   variant="ghost"
                   size="sm"
                   className="shrink-0 text-destructive hover:bg-destructive/10"
+                  aria-label="Sair do projeto"
+                  title="Sair do projeto"
                   onClick={() => {
                     removeMember(project.id, member.id);
                     setOpen(false);
@@ -102,7 +106,7 @@ export function ProjectMembersDialog({ project }: { project: Project }) {
                   }}
                 >
                   <LogOut />
-                  Sair
+                  <span className="hidden sm:inline">Sair</span>
                 </Button>
               )}
             </li>

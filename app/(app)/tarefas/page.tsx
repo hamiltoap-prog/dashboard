@@ -111,7 +111,7 @@ export default function MyTasksPage() {
                         className="flex flex-col gap-1.5 rounded-xl border border-border bg-card p-3 outline-none transition-shadow hover:shadow-md focus-visible:ring-[3px] focus-visible:ring-ring/50"
                       >
                         <div className="flex items-start justify-between gap-3">
-                          <span className="text-sm font-medium leading-snug">{card.title}</span>
+                          <span className="min-w-0 text-sm font-medium leading-snug wrap-anywhere">{card.title}</span>
                           {card.dueDate && (
                             <span
                               className={cn(
@@ -123,12 +123,11 @@ export default function MyTasksPage() {
                             </span>
                           )}
                         </div>
-                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-                          <span>{project.name}</span>
-                          <span aria-hidden>·</span>
-                          <span>{columnById.get(card.columnId)?.name}</span>
+                        <span className="text-xs text-muted-foreground wrap-anywhere">{project.name}</span>
+                        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+                          <span className="min-w-0 wrap-anywhere">{columnById.get(card.columnId)?.name}</span>
                           {card.labels.map((label) => (
-                            <Badge key={label} variant="default" className="px-2 py-0 text-[11px]">
+                            <Badge key={label} variant="default" className="max-w-full truncate px-2 py-0 text-[11px]">
                               {label}
                             </Badge>
                           ))}

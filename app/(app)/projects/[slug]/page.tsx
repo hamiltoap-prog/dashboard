@@ -75,15 +75,15 @@ export default function ProjectOverviewPage() {
             ) : (
               <ul className="flex flex-col gap-4">
                 {upcomingMeetings.map(({ meeting, startsAt }) => (
-                  <li key={`${meeting.id}-${startsAt}`} className="flex flex-col gap-0.5">
-                    <span className="text-sm font-medium">{meeting.title}</span>
+                  <li key={`${meeting.id}-${startsAt}`} className="flex min-w-0 flex-col gap-0.5">
+                    <span className="text-sm font-medium wrap-anywhere">{meeting.title}</span>
                     <span className="text-xs text-muted-foreground">
                       {format(new Date(startsAt), "EEEE, d 'de' MMMM 'às' HH:mm", {
                         locale: ptBR,
                       })}
                     </span>
                     {meeting.location && (
-                      <span className="text-xs text-muted-foreground">{meeting.location}</span>
+                      <span className="line-clamp-2 text-xs text-muted-foreground wrap-anywhere">{meeting.location}</span>
                     )}
                   </li>
                 ))}
