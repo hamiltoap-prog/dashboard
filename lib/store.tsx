@@ -27,6 +27,7 @@ import { FullPageSpinner } from "@/components/full-page-spinner";
 import { useAuth } from "@/lib/firebase/auth";
 import { getFirebase } from "@/lib/firebase/client";
 import { notify } from "@/lib/notify";
+import { deleteReferenceImage } from "@/lib/reference-images";
 import { ensureProfile } from "@/lib/firebase/profile";
 import type {
   ActivityAction,
@@ -213,6 +214,12 @@ interface StoreContextValue extends StoreData {
     thumbnailUrl?: string | null;
     tags?: string[];
   }) => ProjectReference;
+  // Grava direto pelo endereço (projectId + id): funciona mesmo logo após criar a referência.
+  updateReference: (
+    projectId: string,
+    id: string,
+    patch: Partial<Pick<ProjectReference, "title" | "tags" | "thumbnailUrl" | "thumbnailPath" | "thumbnailSource">>
+  ) => Promise<void>;
   deleteReference: (id: string) => void;
   addMeeting: (input: {
     projectId: string;
@@ -799,12 +806,22 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         return reference;
       },
 
+      updateReference: async (projectId, id, patch) => {
+        const fields = pick(patch, ["title", "tags", "thumbnailUrl", "thumbnailPath", "thumbnailSource"]);
+        await updateDoc(itemDoc(projectId, "references", id), fields).catch((error) => {
+          failure("Não foi possível salvar a referência.")(error);
+          throw error;
+        });
+      },
+
       deleteReference: (id) => {
         const reference = data.references.find((r) => r.id === id);
         if (!reference) return;
         deleteDoc(itemDoc(reference.projectId, "references", id)).catch(
           failure("Não foi possível excluir a referência.")
         );
+        // apaga também a imagem de capa guardada no Storage (se houver)
+        if (reference.thumbnailPath) deleteReferenceImage(reference.thumbnailPath);
         logActivity(reference.projectId, "deleted", "reference", reference.title || reference.url);
       },
 

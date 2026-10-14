@@ -144,6 +144,21 @@ falta de permissão da conta `firebase-app-hosting-compute@SEU_PROJETO.iam.gserv
 papel **Cloud Datastore User** em *IAM*). Sem a chave VAPID configurada, a tela mostra que as notificações ainda não
 foram configuradas e o resto do app funciona normalmente.
 
+### Imagens das referências (Firebase Storage)
+
+As capas das referências ficam no **Firebase Storage**: a imagem do post do Instagram (o servidor busca a imagem
+de postagens públicas e guarda uma cópia, porque os links do Instagram expiram) e as imagens enviadas pelas pessoas
+(prints, fotos). Ativação (uma vez):
+
+1. Console do Firebase → **Build → Storage → Começar** (modo produção; a mesma região do Firestore, se possível).
+2. Na aba **Regras** do Storage, cole o arquivo [`storage.rules`](./storage.rules) → **Publicar**. As regras consultam
+   o Firestore para saber quem é membro do projeto; se o Console pedir permissão para o Storage acessar o Firestore,
+   aceite.
+3. Pronto: o próximo rollout já usa o bucket (o App Hosting repassa o nome dele ao site).
+
+Se a imagem do Instagram não vier (conta privada, post apagado ou o Instagram recusou), o card mostra a postagem
+embutida e dá para enviar um print em **Enviar imagem**.
+
 ## 6. Como os dados são guardados
 
 ```
@@ -152,6 +167,8 @@ projects/{projectId}                 projeto; memberIds = quem tem acesso; creat
 projects/{projectId}/columns|cards|comments|files|references|meetings|activity/{id}
 users/{uid}/devices/{id}             aparelhos que recebem notificações (só a própria pessoa)
 userSecrets/{uid}                    link secreto do calendário (só a própria pessoa)
+
+Storage: projects/{projectId}/references/{referenceId}/…   capas das referências (só membros)
 ```
 
 Regras principais (veja [`firestore.rules`](./firestore.rules)):
@@ -165,7 +182,7 @@ Regras principais (veja [`firestore.rules`](./firestore.rules)):
 ## 7. Testar com os emuladores (opcional, para quem desenvolve)
 
 ```bash
-npx firebase-tools emulators:start --only auth,firestore --project demo-palco
+npx firebase-tools emulators:start --only auth,firestore,storage --project demo-palco
 # em outro terminal, com o app apontando para o emulador:
 NEXT_PUBLIC_FIREBASE_API_KEY=x NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=localhost \
 NEXT_PUBLIC_FIREBASE_PROJECT_ID=demo-palco NEXT_PUBLIC_FIREBASE_APP_ID=1:1:web:1 \
@@ -182,6 +199,8 @@ NEXT_PUBLIC_FIREBASE_EMULATOR_HOST=127.0.0.1 npm run dev
 - `firestore.rules`, `firebase.json` — regras de segurança e configuração dos emuladores
 - `app/manifest.ts`, `public/sw.js`, `public/icons/`, `components/pwa.tsx` — app instalável e uso offline
 - `lib/recurrence.ts`, `lib/ics.ts` — reuniões recorrentes e exportação .ics
-- `app/api/notify`, `app/api/calendar/[token]`, `lib/server/` — servidor: notificações push e feed de calendário
+- `app/api/notify`, `app/api/calendar/[token]`, `app/api/references/instagram-image`, `lib/server/` — servidor:
+  notificações push, feed de calendário e imagem dos posts do Instagram
+- `storage.rules` — regras do Firebase Storage (imagens das referências)
 - `apphosting.yaml`, `next.config.ts` — hospedagem no App Hosting e repasse da configuração do Firebase ao site
 - `scripts/` — migração do Supabase

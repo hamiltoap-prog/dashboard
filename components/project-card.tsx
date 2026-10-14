@@ -53,13 +53,15 @@ export function ProjectCard({ project }: { project: Project }) {
                 <UserAvatar key={member.id} profile={member} className="size-6 text-[10px]" />
               ))}
             </div>
-            <span className="text-xs text-muted-foreground">
-              atualizado{" "}
-              {formatDistanceToNow(new Date(project.updatedAt), {
-                addSuffix: true,
-                locale: ptBR,
-              })}
-            </span>
+            {!Number.isNaN(Date.parse(project.updatedAt)) && (
+              <span className="text-xs text-muted-foreground">
+                atualizado{" "}
+                {formatDistanceToNow(new Date(project.updatedAt), {
+                  addSuffix: true,
+                  locale: ptBR,
+                })}
+              </span>
+            )}
           </div>
         </div>
       </Link>

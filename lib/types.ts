@@ -104,6 +104,11 @@ export interface ProjectReference {
   title: string;
   sourceLabel: string;
   thumbnailUrl?: string | null;
+  // capa guardada no Firebase Storage (enviada pela pessoa ou copiada do post do Instagram)
+  thumbnailPath?: string | null;
+  thumbnailSource?: "upload" | "instagram" | null;
+  // quando o servidor tentou buscar a imagem do Instagram (evita tentar de novo sem parar)
+  thumbnailTriedAt?: string | null;
   tags: string[];
   addedBy: string;
   addedAt: string;

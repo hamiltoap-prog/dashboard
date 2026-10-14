@@ -10,7 +10,9 @@ const Toaster = ({ ...props }: ToasterProps) => {
     <Sonner
       theme={resolvedTheme as ToasterProps["theme"]}
       className="toaster group"
-      position="bottom-right"
+      // No topo: no celular não cobre os cards nem a área onde o polegar toca (embaixo, um toque
+      // deixava os avisos "presos" abertos por cima do conteúdo).
+      position="top-center"
       style={
         {
           "--normal-bg": "var(--card)",

@@ -1,5 +1,6 @@
 import { getApp, getApps, initializeApp, type FirebaseApp } from "firebase/app";
 import { connectAuthEmulator, getAuth, type Auth } from "firebase/auth";
+import { connectStorageEmulator, getStorage, type FirebaseStorage } from "firebase/storage";
 import {
   connectFirestoreEmulator,
   initializeFirestore,
@@ -14,6 +15,7 @@ interface FirebaseServices {
   app: FirebaseApp;
   auth: Auth;
   db: Firestore;
+  storage: FirebaseStorage;
 }
 
 let services: FirebaseServices | null = null;
@@ -43,6 +45,9 @@ export function getFirebase(): FirebaseServices {
     connectFirestoreEmulator(db, emulatorHost, 8080);
   }
 
-  services = { app, auth, db };
+  const storage = getStorage(app);
+  if (emulatorHost && !alreadyInitialized) connectStorageEmulator(storage, emulatorHost, 9199);
+
+  services = { app, auth, db, storage };
   return services;
 }

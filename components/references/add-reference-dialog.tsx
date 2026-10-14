@@ -26,8 +26,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { CoverImagePicker } from "@/components/references/cover-image-picker";
 import { InstagramEmbed } from "@/components/references/instagram-embed";
 import { getInstagramPost } from "@/lib/instagram";
+import { requestInstagramImage } from "@/lib/instagram-image-client";
+import { uploadReferenceImage } from "@/lib/reference-images";
 import { useStore } from "@/lib/store";
 import { getYouTubeId, youTubeThumbnail } from "@/lib/youtube";
 import { guessSourceLabel, looksLikeDirectImageUrl } from "@/lib/link-preview";
@@ -46,7 +49,8 @@ type FormValues = z.infer<typeof schema>;
 
 export function AddReferenceDialog({ projectId }: { projectId: string }) {
   const [open, setOpen] = React.useState(false);
-  const { addReference } = useStore();
+  const { addReference, updateReference } = useStore();
+  const [cover, setCover] = React.useState<File | null>(null);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -71,7 +75,7 @@ export function AddReferenceDialog({ projectId }: { projectId: string }) {
 
   function onSubmit(values: FormValues) {
     const type: ReferenceType = youTubeId ? "video" : isDirectImage ? "imagem" : "link";
-    addReference({
+    const reference = addReference({
       projectId,
       type,
       url: values.url,
@@ -85,6 +89,19 @@ export function AddReferenceDialog({ projectId }: { projectId: string }) {
     toast.success("Referência adicionada");
     setOpen(false);
     form.reset();
+    setCover(null);
+
+    // Depois de salvar: envia a imagem escolhida ou busca a imagem do post do Instagram.
+    if (cover) {
+      toast.promise(
+        uploadReferenceImage(projectId, reference.id, cover).then(({ url, path }) =>
+          updateReference(projectId, reference.id, { thumbnailUrl: url, thumbnailPath: path, thumbnailSource: "upload" })
+        ),
+        { loading: "Enviando imagem…", success: "Imagem salva", error: "Não foi possível enviar a imagem." }
+      );
+    } else if (instagram) {
+      requestInstagramImage(projectId, reference.id);
+    }
   }
 
   return (
@@ -92,7 +109,10 @@ export function AddReferenceDialog({ projectId }: { projectId: string }) {
       open={open}
       onOpenChange={(next) => {
         setOpen(next);
-        if (!next) form.reset();
+        if (!next) {
+          form.reset();
+          setCover(null);
+        }
       }}
     >
       <DialogTrigger asChild>
@@ -130,8 +150,9 @@ export function AddReferenceDialog({ projectId }: { projectId: string }) {
             {instagram && (
               <div className="flex flex-col gap-2">
                 <p className="text-xs text-muted-foreground">
-                  Postagem do Instagram detectada — vai aparecer com a imagem do post. Se a prévia
-                  abaixo ficar vazia, a conta pode ser privada (só postagens públicas aparecem).
+                  Postagem do Instagram detectada — a imagem do post é buscada e salva sozinha. Se
+                  a prévia abaixo ficar vazia, a conta pode ser privada: nesse caso, envie um print
+                  em “Imagem de capa”.
                 </p>
                 <div className="mx-auto w-full max-w-[220px] overflow-hidden rounded-xl border border-border">
                   <InstagramEmbed post={instagram} title="Prévia da postagem" nativeWidth={400} extraHeight={60} />
@@ -140,10 +161,8 @@ export function AddReferenceDialog({ projectId }: { projectId: string }) {
             )}
             {isPageLink && (
               <p className="text-xs text-muted-foreground">
-                Esse é um link de página (não o arquivo da imagem), então vai aparecer como um
-                card de link, sem preview. Para mostrar a foto: abra o post, clique com o botão
-                direito na imagem → <strong>&quot;Copiar endereço da imagem&quot;</strong> — e
-                cole esse link aqui em vez do link do post.
+                Link de página: para aparecer com foto, envie uma imagem (um print, por exemplo)
+                em <strong>Imagem de capa</strong>, logo abaixo.
               </p>
             )}
           </div>
@@ -159,6 +178,13 @@ export function AddReferenceDialog({ projectId }: { projectId: string }) {
               <p className="text-xs text-destructive">{form.formState.errors.title.message}</p>
             )}
           </div>
+
+          {!youTubeId && !isDirectImage && (
+            <div className="flex flex-col gap-1.5">
+              <Label>Imagem de capa {instagram ? "(opcional, substitui a do post)" : "(opcional)"}</Label>
+              <CoverImagePicker file={cover} onChange={setCover} />
+            </div>
+          )}
 
           <div className="grid grid-cols-1 gap-3 min-[380px]:grid-cols-2">
             <div className="flex flex-col gap-1.5">

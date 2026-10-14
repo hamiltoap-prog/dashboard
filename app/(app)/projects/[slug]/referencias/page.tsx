@@ -5,17 +5,36 @@ import * as React from "react";
 import { AddReferenceDialog } from "@/components/references/add-reference-dialog";
 import { ReferenceCard } from "@/components/references/reference-card";
 import { ReferenceViewerDialog } from "@/components/references/reference-viewer-dialog";
+import { getInstagramPost } from "@/lib/instagram";
+import { requestInstagramImage } from "@/lib/instagram-image-client";
 import { useProject, useStore } from "@/lib/store";
-import type { ProjectReference } from "@/lib/types";
 
 export default function ProjectReferencesPage() {
   const project = useProject();
   const { references } = useStore();
-  const [selected, setSelected] = React.useState<ProjectReference | null>(null);
+  const [selectedId, setSelectedId] = React.useState<string | null>(null);
+
+  const projectId = project?.id;
+  const projectReferences = React.useMemo(
+    () => references.filter((r) => r.projectId === projectId),
+    [references, projectId]
+  );
+  // acompanha a referência ao vivo (ex.: a imagem chega enquanto o visualizador está aberto)
+  const selected = projectReferences.find((r) => r.id === selectedId) ?? null;
+
+  React.useEffect(() => {
+    if (!projectId) return;
+    const pending = projectReferences.filter(
+      (r) => !r.thumbnailUrl && !r.thumbnailTriedAt && getInstagramPost(r.url)
+    );
+    // Referências do Instagram ainda sem imagem (ex.: cadastradas antes desta função): pede ao
+    // servidor para buscar a imagem do post. O servidor marca a tentativa para não repetir sem parar.
+    (async () => {
+      for (const r of pending) await requestInstagramImage(projectId, r.id);
+    })();
+  }, [projectId, projectReferences]);
 
   if (!project) return null;
-
-  const projectReferences = references.filter((r) => r.projectId === project.id);
 
   return (
     <div className="flex flex-col gap-4">
@@ -27,7 +46,7 @@ export default function ProjectReferencesPage() {
         <div className="flex flex-col items-center justify-center gap-1 rounded-2xl border border-dashed border-border py-16 text-center">
           <p className="font-medium">Nenhuma referência ainda</p>
           <p className="text-sm text-muted-foreground">
-            Adicione vídeos do YouTube ou imagens de outras fontes para inspirar o projeto.
+            Adicione postagens do Instagram, vídeos do YouTube ou imagens para inspirar o projeto.
           </p>
         </div>
       ) : (
@@ -36,7 +55,7 @@ export default function ProjectReferencesPage() {
             <ReferenceCard
               key={reference.id}
               reference={reference}
-              onClick={() => setSelected(reference)}
+              onClick={() => setSelectedId(reference.id)}
             />
           ))}
         </div>
@@ -45,7 +64,7 @@ export default function ProjectReferencesPage() {
       <ReferenceViewerDialog
         key={selected?.id ?? "none"}
         reference={selected}
-        onOpenChange={(open) => !open && setSelected(null)}
+        onOpenChange={(open) => !open && setSelectedId(null)}
       />
     </div>
   );

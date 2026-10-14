@@ -1,0 +1,22 @@
+rules_version = '2';
+
+// Regras do Firebase Storage do Palco. Publique em: Firebase Console > Storage > Rules
+// (ou com `firebase deploy --only storage`).
+//
+// Imagens de capa das referências: projects/{projectId}/references/{referenceId}/{arquivo}
+// Só quem é membro do projeto (lista memberIds no Firestore) envia, vê e apaga.
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /projects/{projectId}/references/{referenceId}/{fileName} {
+      function isMember() {
+        return request.auth != null
+          && request.auth.uid in firestore.get(/databases/(default)/documents/projects/$(projectId)).data.memberIds;
+      }
+
+      allow read, delete: if isMember();
+      allow create, update: if isMember()
+        && request.resource.size < 8 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+    }
+  }
+}
