@@ -31,7 +31,7 @@ runConfig:
 # ---------------------------------------------------------------------------------------------
 # Notificações push (veja o README, seção "Notificações push").
 # A chave pública não é segredo. A privada fica no Secret Manager (segredo "vapid-private-key",
-# criado com `firebase apphosting:secrets:set`) e nunca no GitHub.
+# criado com `firebase apphosting:secrets:set --project SEU_PROJETO`) e nunca no GitHub.
 env:
   - variable: NEXT_PUBLIC_VAPID_PUBLIC_KEY
     value: BGVZBqCF4sXY65DbQFtdkyDdOodFSd7CBEtau-411tTs455455JuNsHrfLuIoVwTFMYJkwiWOVceYyGcElNoXHE
