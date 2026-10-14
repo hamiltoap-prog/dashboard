@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { CalendarFeedSettings } from "@/components/calendar-feed-settings";
+import { PushSettings } from "@/components/push-settings";
 import { UserAvatar } from "@/components/user-avatar";
 import { AVATAR_COLORS } from "@/lib/firebase/profile";
 import { useStore } from "@/lib/store";
@@ -34,7 +36,7 @@ export default function ProfilePage() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-md">
+    <div className="mx-auto flex w-full max-w-md flex-col gap-4">
       <Card>
         <CardHeader>
           <CardTitle>Seu perfil</CardTitle>
@@ -108,6 +110,9 @@ export default function ProfilePage() {
           </form>
         </CardContent>
       </Card>
+
+      <PushSettings />
+      <CalendarFeedSettings />
     </div>
   );
 }

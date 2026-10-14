@@ -41,6 +41,8 @@ export function meetingsToIcs(meetings: Meeting[], calendarName = "Palco"): stri
     "PRODID:-//Palco//Reunioes//PT-BR",
     "CALSCALE:GREGORIAN",
     `X-WR-CALNAME:${escapeText(calendarName)}`,
+    "REFRESH-INTERVAL;VALUE=DURATION:PT1H",
+    "X-PUBLISHED-TTL:PT1H",
   ];
   const stamp = utc(new Date().toISOString());
   for (const m of meetings) {

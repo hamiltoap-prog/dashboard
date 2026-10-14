@@ -2,7 +2,7 @@
 // - arquivos do app (/_next/static, ícones): guarda e reutiliza
 // - páginas: tenta a internet primeiro; sem internet, usa a última cópia
 // Os dados (projetos, cards...) NÃO passam por aqui: o Firestore guarda a própria cópia local.
-const VERSION = "palco-v1";
+const VERSION = "palco-v2";
 const STATIC_CACHE = `${VERSION}-static`;
 const PAGES_CACHE = `${VERSION}-pages`;
 const MAX_STATIC_ENTRIES = 200;
@@ -68,4 +68,42 @@ self.addEventListener("fetch", (event) => {
   } else if (request.mode === "navigate") {
     event.respondWith(networkFirstPage(request));
   }
+});
+
+// ---------------------------------------------------------------- notificações push
+// O servidor manda um JSON: { title, body, url, tag }.
+self.addEventListener("push", (event) => {
+  let data = {};
+  try {
+    data = event.data ? event.data.json() : {};
+  } catch {
+    data = { body: event.data ? event.data.text() : "" };
+  }
+  event.waitUntil(
+    self.registration.showNotification(data.title || "Palco", {
+      body: data.body || "",
+      icon: "/icons/icon-192.png",
+      badge: "/icons/icon-192.png",
+      tag: data.tag || undefined,
+      data: { url: data.url || "/" },
+    })
+  );
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const target = new URL((event.notification.data && event.notification.data.url) || "/", self.location.origin).href;
+  event.waitUntil(
+    (async () => {
+      const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+      for (const client of windows) {
+        if (new URL(client.url).origin === self.location.origin) {
+          await client.focus();
+          if ("navigate" in client) await client.navigate(target);
+          return;
+        }
+      }
+      await self.clients.openWindow(target);
+    })()
+  );
 });

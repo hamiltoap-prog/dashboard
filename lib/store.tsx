@@ -26,6 +26,7 @@ import {
 import { FullPageSpinner } from "@/components/full-page-spinner";
 import { useAuth } from "@/lib/firebase/auth";
 import { getFirebase } from "@/lib/firebase/client";
+import { notify } from "@/lib/notify";
 import { ensureProfile } from "@/lib/firebase/profile";
 import type {
   ActivityAction,
@@ -500,7 +501,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         updateDoc(projectDoc(projectId), {
           memberIds: arrayUnion(profile.id),
           updatedAt: nowIso(),
-        }).catch(failure("Não foi possível adicionar a pessoa."));
+        })
+          .then(() => notify({ kind: "member_added", projectId, targetUserId: profile.id }))
+          .catch(failure("Não foi possível adicionar a pessoa."));
         logActivity(projectId, "updated", "project", project.name, `adicionou ${profile.name} ao projeto`);
         toast.success(`${profile.name} foi adicionado(a) ao projeto`);
       },
@@ -682,9 +685,17 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           "columnId",
           "position",
         ]);
-        updateDoc(itemDoc(card.projectId, "cards", id), { ...fields, updatedAt: nowIso() }).catch(
-          failure("Não foi possível salvar as alterações do card.")
+        // Quem acabou de virar responsável recebe um aviso (depois que o servidor confirmar a gravação).
+        const newAssignees = (fields.assigneeIds ?? []).filter(
+          (userId) => userId !== uid && !card.assigneeIds.includes(userId)
         );
+        updateDoc(itemDoc(card.projectId, "cards", id), { ...fields, updatedAt: nowIso() })
+          .then(() => {
+            if (newAssignees.length > 0) {
+              notify({ kind: "assigned", projectId: card.projectId, cardId: id, targetUserIds: newAssignees });
+            }
+          })
+          .catch(failure("Não foi possível salvar as alterações do card."));
         logActivity(card.projectId, "updated", "card", card.title);
       },
 
@@ -727,9 +738,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           text: trimmed,
           createdAt: nowIso(),
         };
-        setDoc(itemDoc(card.projectId, "comments", comment.id), withoutId(comment)).catch(
-          failure("Não foi possível salvar o comentário.")
-        );
+        setDoc(itemDoc(card.projectId, "comments", comment.id), withoutId(comment))
+          .then(() => notify({ kind: "comment", projectId: card.projectId, cardId, commentId: comment.id }))
+          .catch(failure("Não foi possível salvar o comentário."));
         logActivity(card.projectId, "commented", "card", card.title, trimmed.slice(0, 140));
       },
 
@@ -812,9 +823,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           createdBy: uid,
           createdAt: nowIso(),
         };
-        setDoc(itemDoc(projectId, "meetings", meeting.id), withoutId(meeting)).catch(
-          failure("Não foi possível salvar a reunião.")
-        );
+        setDoc(itemDoc(projectId, "meetings", meeting.id), withoutId(meeting))
+          .then(() => notify({ kind: "meeting", projectId, meetingId: meeting.id }))
+          .catch(failure("Não foi possível salvar a reunião."));
         logActivity(projectId, "created", "meeting", title);
         return meeting;
       },

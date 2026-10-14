@@ -43,6 +43,19 @@ service cloud.firestore {
         && request.resource.data.keys().hasOnly(['name', 'email', 'avatarUrl', 'colorHex', 'createdAt']);
     }
 
+    // Aparelhos que recebem notificações (cada pessoa só vê e mexe nos seus).
+    match /users/{uid}/devices/{deviceId} {
+      allow read, write: if signedIn() && request.auth.uid == uid;
+    }
+
+    // Segredos da própria pessoa (link secreto do calendário). Ninguém mais lê.
+    match /userSecrets/{uid} {
+      allow read, delete: if signedIn() && request.auth.uid == uid;
+      allow create, update: if signedIn()
+        && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['calendarToken', 'createdAt']);
+    }
+
     // -------------------------------------------------------------- projetos
     match /projects/{projectId} {
       allow read: if signedIn() && request.auth.uid in resource.data.memberIds;

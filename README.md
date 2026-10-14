@@ -104,12 +104,54 @@ Pode rodar mais de uma vez sem duplicar nada (os documentos mantêm os mesmos id
 Firebase são reaproveitadas pelo e-mail e perfis já criados não são sobrescritos. Depois de conferir, você pode
 apagar o projeto no Supabase.
 
-## 5. Como os dados são guardados
+## 5. Notificações push e calendário no Google Agenda
+
+Estas duas funções usam um pequeno servidor dentro do próprio site (rotas `/api/...`), que lê o Firestore com a
+conta de serviço do App Hosting (sem chaves no código).
+
+### Calendário que atualiza sozinho (Google Agenda, Apple Calendar, Outlook)
+
+Não precisa configurar nada. Em **Perfil → Calendário no Google Agenda / Apple**, cada pessoa gera um link secreto
+(`/api/calendar/<código>.ics`) com as reuniões de **todos os seus projetos**, inclusive as recorrentes. No Google
+Agenda (computador): *Adicionar agenda → Do URL*. No iPhone: o link "assinar" abre o Calendário. O Google só atualiza
+agendas assinadas de tempos em tempos (de poucas horas a cerca de 1 dia). Quem tiver o link vê as reuniões; se vazar,
+"Gerar novo link" invalida o anterior.
+
+### Notificações push
+
+Avisam no celular/computador quando atribuem um card a você, comentam num card seu, adicionam você a um projeto ou
+marcam uma reunião. Usam Web Push com chaves **VAPID**. No iPhone/iPad só funcionam com o app instalado na tela
+inicial (iOS 16.4+). Configuração (uma vez), em um terminal com o repositório (ex.: Google Cloud Shell):
+
+```bash
+npm install
+npm run vapid:generate       # mostra uma chave pública e uma privada
+```
+
+1. Guarde a **chave privada** no Secret Manager (cole quando o comando pedir; ela nunca vai para o GitHub nem para o chat):
+   ```bash
+   npx firebase-tools apphosting:secrets:set vapid-private-key --project SEU_PROJETO
+   npx firebase-tools apphosting:secrets:grantaccess vapid-private-key --backend NOME_DO_BACKEND --project SEU_PROJETO
+   ```
+2. No arquivo [`apphosting.yaml`](./apphosting.yaml), descomente o bloco de notificações e cole a **chave pública**
+   (essa não é secreta). Faça commit e push; o App Hosting publica sozinho.
+3. Publique de novo as regras do Firestore ([`firestore.rules`](./firestore.rules)): há regras novas para os aparelhos e
+   para o link do calendário.
+4. Em **Perfil → Notificações**, toque em **Ativar neste aparelho** e depois em **Enviar notificação de teste**.
+
+Se o teste falhar com "O servidor não conseguiu enviar", abra *Google Cloud Console → Logging* do backend: normalmente é
+falta de permissão da conta `firebase-app-hosting-compute@SEU_PROJETO.iam.gserviceaccount.com` no Firestore (dê a ela o
+papel **Cloud Datastore User** em *IAM*). Sem a chave VAPID configurada, a tela mostra que as notificações ainda não
+foram configuradas e o resto do app funciona normalmente.
+
+## 6. Como os dados são guardados
 
 ```
 users/{uid}                          perfil público (nome, e-mail, cor)
 projects/{projectId}                 projeto; memberIds = quem tem acesso; createdBy = dono
 projects/{projectId}/columns|cards|comments|files|references|meetings|activity/{id}
+users/{uid}/devices/{id}             aparelhos que recebem notificações (só a própria pessoa)
+userSecrets/{uid}                    link secreto do calendário (só a própria pessoa)
 ```
 
 Regras principais (veja [`firestore.rules`](./firestore.rules)):
@@ -120,7 +162,7 @@ Regras principais (veja [`firestore.rules`](./firestore.rules)):
 - Comentários não podem ser editados; só quem escreveu (ou o dono do projeto) os apaga.
 - O histórico de atividade não pode ser editado.
 
-## 6. Testar com os emuladores (opcional, para quem desenvolve)
+## 7. Testar com os emuladores (opcional, para quem desenvolve)
 
 ```bash
 npx firebase-tools emulators:start --only auth,firestore --project demo-palco
@@ -140,5 +182,6 @@ NEXT_PUBLIC_FIREBASE_EMULATOR_HOST=127.0.0.1 npm run dev
 - `firestore.rules`, `firebase.json` — regras de segurança e configuração dos emuladores
 - `app/manifest.ts`, `public/sw.js`, `public/icons/`, `components/pwa.tsx` — app instalável e uso offline
 - `lib/recurrence.ts`, `lib/ics.ts` — reuniões recorrentes e exportação .ics
+- `app/api/notify`, `app/api/calendar/[token]`, `lib/server/` — servidor: notificações push e feed de calendário
 - `apphosting.yaml`, `next.config.ts` — hospedagem no App Hosting e repasse da configuração do Firebase ao site
 - `scripts/` — migração do Supabase
