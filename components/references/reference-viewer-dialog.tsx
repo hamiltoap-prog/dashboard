@@ -5,10 +5,12 @@ import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { ExternalLink, ImageOff, Trash2 } from "lucide-react";
 
+import { InstagramEmbed } from "@/components/references/instagram-embed";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { useStore } from "@/lib/store";
+import { getInstagramPost } from "@/lib/instagram";
 import { getYouTubeId, youTubeEmbedUrl } from "@/lib/youtube";
 import type { ProjectReference } from "@/lib/types";
 
@@ -26,6 +28,7 @@ export function ReferenceViewerDialog({
 
   const youTubeId = reference.type === "video" ? getYouTubeId(reference.url) : null;
   const hasImage = Boolean(reference.thumbnailUrl) && !imgError;
+  const instagram = youTubeId || hasImage ? null : getInstagramPost(reference.url);
   const addedBy = getProfile(reference.addedBy);
 
   function handleDelete() {
@@ -39,30 +42,34 @@ export function ReferenceViewerDialog({
       <DialogContent className="max-w-xl gap-0 overflow-hidden p-0 sm:p-0">
         <DialogTitle className="sr-only">{reference.title}</DialogTitle>
 
-        <div className="relative aspect-video w-full bg-black">
-          {youTubeId ? (
-            <iframe
-              src={youTubeEmbedUrl(youTubeId)}
-              title={reference.title}
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-              allowFullScreen
-              className="size-full"
-            />
-          ) : hasImage ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={reference.thumbnailUrl!}
-              alt={reference.title}
-              onError={() => setImgError(true)}
-              className="size-full object-contain"
-            />
-          ) : (
-            <div className="flex size-full flex-col items-center justify-center gap-2 px-6 text-center text-white/70">
-              <ImageOff className="size-8" />
-              <p className="text-sm">Sem preview — abra o link original para ver.</p>
-            </div>
-          )}
-        </div>
+        {instagram ? (
+          <InstagramEmbed post={instagram} title={reference.title} interactive />
+        ) : (
+          <div className="relative aspect-video w-full bg-black">
+            {youTubeId ? (
+              <iframe
+                src={youTubeEmbedUrl(youTubeId)}
+                title={reference.title}
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowFullScreen
+                className="size-full"
+              />
+            ) : hasImage ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={reference.thumbnailUrl!}
+                alt={reference.title}
+                onError={() => setImgError(true)}
+                className="size-full object-contain"
+              />
+            ) : (
+              <div className="flex size-full flex-col items-center justify-center gap-2 px-6 text-center text-white/70">
+                <ImageOff className="size-8" />
+                <p className="text-sm">Sem preview — abra o link original para ver.</p>
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="flex flex-col gap-3 p-5 pt-4">
           <div className="flex items-start justify-between gap-3">

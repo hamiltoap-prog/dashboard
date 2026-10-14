@@ -26,6 +26,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { InstagramEmbed } from "@/components/references/instagram-embed";
+import { getInstagramPost } from "@/lib/instagram";
 import { useStore } from "@/lib/store";
 import { getYouTubeId, youTubeThumbnail } from "@/lib/youtube";
 import { guessSourceLabel, looksLikeDirectImageUrl } from "@/lib/link-preview";
@@ -54,7 +56,8 @@ export function AddReferenceDialog({ projectId }: { projectId: string }) {
   const url = form.watch("url");
   const youTubeId = React.useMemo(() => getYouTubeId(url), [url]);
   const isDirectImage = React.useMemo(() => looksLikeDirectImageUrl(url), [url]);
-  const isPageLink = Boolean(url) && !youTubeId && !isDirectImage;
+  const instagram = React.useMemo(() => (youTubeId || isDirectImage ? null : getInstagramPost(url ?? "")), [url, youTubeId, isDirectImage]);
+  const isPageLink = Boolean(url) && !youTubeId && !isDirectImage && !instagram;
 
   React.useEffect(() => {
     if (!url) return;
@@ -102,8 +105,8 @@ export function AddReferenceDialog({ projectId }: { projectId: string }) {
         <DialogHeader>
           <DialogTitle>Adicionar referência</DialogTitle>
           <DialogDescription>
-            Cole um link do YouTube para virar vídeo, ou o link de uma imagem (Instagram,
-            Pinterest, etc).
+            Cole o link de uma postagem do Instagram, de um vídeo do YouTube ou de uma imagem
+            (Pinterest, sites, etc).
           </DialogDescription>
         </DialogHeader>
 
@@ -123,6 +126,17 @@ export function AddReferenceDialog({ projectId }: { projectId: string }) {
               <p className="text-xs text-muted-foreground">
                 Link direto de imagem detectado — vai aparecer com a foto.
               </p>
+            )}
+            {instagram && (
+              <div className="flex flex-col gap-2">
+                <p className="text-xs text-muted-foreground">
+                  Postagem do Instagram detectada — vai aparecer com a imagem do post. Se a prévia
+                  abaixo ficar vazia, a conta pode ser privada (só postagens públicas aparecem).
+                </p>
+                <div className="mx-auto w-full max-w-[220px] overflow-hidden rounded-xl border border-border">
+                  <InstagramEmbed post={instagram} title="Prévia da postagem" nativeWidth={400} extraHeight={60} />
+                </div>
+              </div>
             )}
             {isPageLink && (
               <p className="text-xs text-muted-foreground">

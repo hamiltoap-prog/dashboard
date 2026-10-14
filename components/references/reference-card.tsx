@@ -3,7 +3,9 @@
 import * as React from "react";
 import { ImageOff, Link2, Play } from "lucide-react";
 
+import { InstagramEmbed } from "@/components/references/instagram-embed";
 import { Badge } from "@/components/ui/badge";
+import { getInstagramPost } from "@/lib/instagram";
 import type { ProjectReference } from "@/lib/types";
 
 export function ReferenceCard({
@@ -15,6 +17,7 @@ export function ReferenceCard({
 }) {
   const [imgError, setImgError] = React.useState(false);
   const hasImage = Boolean(reference.thumbnailUrl) && !imgError;
+  const instagram = hasImage ? null : getInstagramPost(reference.url);
 
   return (
     <button
@@ -23,7 +26,9 @@ export function ReferenceCard({
       className="group mb-4 block w-full break-inside-avoid overflow-hidden rounded-2xl border border-border bg-card text-left shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
     >
       <div className="relative w-full overflow-hidden bg-secondary">
-        {hasImage ? (
+        {instagram ? (
+          <InstagramEmbed post={instagram} title={reference.title} nativeWidth={400} extraHeight={60} />
+        ) : hasImage ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={reference.thumbnailUrl!}
